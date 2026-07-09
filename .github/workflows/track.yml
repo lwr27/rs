@@ -51,6 +51,11 @@ jobs:
       - name: Pull latest commit
         run: git pull
 
+      - name: Copy data into docs
+        run: |
+          mkdir -p docs/data
+          cp data/latest.json docs/data/latest.json
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
