@@ -1,17 +1,26 @@
 {
-  "updated": "2026-07-09T08:34:20.418Z",
+  "updated": "2026-07-09T08:36:33.407Z",
   "players": [
     {
       "username": "6LR",
-      "error": "ENOENT: no such file or directory, open '/home/runner/work/rs/rs/data/snapshots/6lr.json'"
+      "totalLevel": 1165,
+      "totalXp": 18255509,
+      "gains": {},
+      "totalGain": 0
     },
     {
-      "username": "Iron Swiifty",
-      "error": "Hiscores request failed for Iron Swiifty: 404"
+      "username": "Iron Shiifty",
+      "totalLevel": 2124,
+      "totalXp": 189006867,
+      "gains": {},
+      "totalGain": 0
     },
     {
       "username": "5JV",
-      "error": "ENOENT: no such file or directory, open '/home/runner/work/rs/rs/data/snapshots/5jv.json'"
+      "totalLevel": 2023,
+      "totalXp": 107934813,
+      "gains": {},
+      "totalGain": 0
     }
   ]
 }
