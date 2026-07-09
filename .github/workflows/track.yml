@@ -23,8 +23,9 @@ jobs:
 
       - name: Copy data into docs
         run: |
-          mkdir -p docs/data
+          mkdir -p docs/data/snapshots
           cp data/latest.json docs/data/latest.json
+          cp -r data/snapshots/. docs/data/snapshots/
 
       - name: Commit updated data
         run: |
