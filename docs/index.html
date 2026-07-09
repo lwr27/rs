@@ -5,47 +5,208 @@
 <title>OSRS XP Tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
-  h1 { font-size: 1.4rem; }
-  .updated { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
-  .player { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-  .player h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
-  .stat-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin: 0.25rem 0; }
-  .gain { color: #1a7f37; font-weight: 600; }
-  .error { color: #b91c1c; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Trebuchet MS', Verdana, sans-serif;
+    background: #14110c;
+    color: #ffd200;
+    max-width: 480px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  h1 { font-size: 1.2rem; color: #ffd200; text-align: center; margin-bottom: 0.25rem; }
+  .updated { color: #a89f8c; font-size: 0.75rem; text-align: center; margin-bottom: 1rem; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 1rem; }
+  .tab {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    background: #3e3529;
+    border: 2px solid #5a4d38;
+    color: #cbbf9e;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: bold;
+  }
+  .tab.active { background: #5a4d38; color: #ffd200; border-color: #ffd200; }
+
+  .panel {
+    background: #3e3529;
+    border: 3px solid #5a4d38;
+    border-radius: 4px;
+    padding: 6px;
+    display: none;
+  }
+  .panel.active { display: block; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+  }
+  .skill-cell {
+    position: relative;
+    background: #14110c;
+    border: 1px solid #000;
+    padding: 6px 4px;
+    text-align: center;
+    cursor: default;
+  }
+  .skill-cell .name {
+    font-size: 0.6rem;
+    color: #cbbf9e;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .skill-cell .level {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #ffffff;
+  }
+  .skill-cell .gain-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+  }
+
+  .total-bar {
+    grid-column: span 3;
+    background: #14110c;
+    border: 1px solid #000;
+    padding: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+  .total-bar .label { color: #cbbf9e; }
+  .total-bar .value { color: #fff; font-weight: bold; }
+  .total-bar .gain { color: #4ade80; font-weight: bold; }
+
+  .tooltip {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 6px;
+    background: #000;
+    border: 1px solid #5a4d38;
+    color: #fff;
+    font-size: 0.7rem;
+    padding: 6px 8px;
+    white-space: nowrap;
+    border-radius: 3px;
+  }
+  .tooltip .row { display: flex; justify-content: space-between; gap: 12px; }
+  .tooltip .row + .row { margin-top: 2px; }
+  .skill-cell:hover .tooltip { display: block; }
+
+  .error { color: #ef4444; text-align: center; padding: 1rem; }
 </style>
 </head>
 <body>
   <h1>OSRS XP tracker</h1>
   <p class="updated" id="updated">Loading...</p>
-  <div id="players"></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="panels"></div>
 
   <script>
+    const SKILL_ORDER = [
+      "Attack", "Hitpoints", "Mining",
+      "Strength", "Agility", "Smithing",
+      "Defence", "Herblore", "Fishing",
+      "Ranged", "Thieving", "Cooking",
+      "Prayer", "Crafting", "Firemaking",
+      "Magic", "Fletching", "Woodcutting",
+      "Runecrafting", "Slayer", "Farming",
+      "Construction", "Hunter"
+    ];
+
+    function fmt(n) { return n.toLocaleString(); }
+
+    function buildTooltip(skill, data, gain) {
+      const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
+      let html = `
+        <div class="row"><span>${skill}</span><span></span></div>
+        <div class="row"><span>Level</span><span>${data.level}</span></div>
+        <div class="row"><span>XP</span><span>${fmt(data.xp)}</span></div>
+        <div class="row"><span>Rank</span><span>${rankText}</span></div>
+      `;
+      if (gain > 0) {
+        html += `<div class="row"><span>Gained</span><span style="color:#4ade80">+${fmt(gain)}</span></div>`;
+      }
+      return html;
+    }
+
+    function renderPlayer(player) {
+      const wrap = document.createElement("div");
+      wrap.className = "grid";
+
+      SKILL_ORDER.forEach(skill => {
+        const data = player.stats[skill];
+        const gain = (player.gains && player.gains[skill]) || 0;
+
+        const cell = document.createElement("div");
+        cell.className = "skill-cell";
+        cell.innerHTML = `
+          <div class="name">${skill}</div>
+          <div class="level">${data.level}</div>
+          ${gain > 0 ? '<div class="gain-dot"></div>' : ""}
+          <div class="tooltip">${buildTooltip(skill, data, gain)}</div>
+        `;
+        wrap.appendChild(cell);
+      });
+
+      const totalBar = document.createElement("div");
+      totalBar.className = "total-bar";
+      totalBar.innerHTML = `
+        <span class="label">Total level ${player.totalLevel} &middot; ${fmt(player.totalXp)} xp</span>
+        <span class="gain">${player.totalGain > 0 ? "+" + fmt(player.totalGain) + " xp" : ""}</span>
+      `;
+      wrap.appendChild(totalBar);
+
+      return wrap;
+    }
+
     fetch("../data/latest.json")
       .then(r => r.json())
       .then(data => {
         document.getElementById("updated").textContent =
           "Last updated: " + new Date(data.updated).toLocaleString();
 
-        const container = document.getElementById("players");
-        data.players.forEach(p => {
-          const div = document.createElement("div");
-          div.className = "player";
-          if (p.error) {
-            div.innerHTML = `<h2>${p.username}</h2><p class="error">Error: ${p.error}</p>`;
+        const tabs = document.getElementById("tabs");
+        const panels = document.getElementById("panels");
+
+        data.players.forEach((player, i) => {
+          const tab = document.createElement("div");
+          tab.className = "tab" + (i === 0 ? " active" : "");
+          tab.textContent = player.username;
+          tab.onclick = () => {
+            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+            document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+            tab.classList.add("active");
+            document.getElementById("panel-" + i).classList.add("active");
+          };
+          tabs.appendChild(tab);
+
+          const panel = document.createElement("div");
+          panel.className = "panel" + (i === 0 ? " active" : "");
+          panel.id = "panel-" + i;
+
+          if (player.error) {
+            panel.innerHTML = `<div class="error">${player.error}</div>`;
           } else {
-            const gainRows = Object.entries(p.gains || {})
-              .map(([skill, xp]) => `<div class="stat-row"><span>${skill}</span><span class="gain">+${xp.toLocaleString()} xp</span></div>`)
-              .join("");
-            div.innerHTML = `
-              <h2>${p.username}</h2>
-              <div class="stat-row"><span>Total level</span><span>${p.totalLevel}</span></div>
-              <div class="stat-row"><span>Total xp</span><span>${p.totalXp.toLocaleString()}</span></div>
-              <div class="stat-row"><span>Gained this run</span><span class="gain">+${p.totalGain.toLocaleString()} xp</span></div>
-              ${gainRows}
-            `;
+            panel.appendChild(renderPlayer(player));
           }
-          container.appendChild(div);
+          panels.appendChild(panel);
         });
       })
       .catch(err => {
