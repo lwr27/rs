@@ -1307,6 +1307,141 @@
       },
       "gains": {},
       "totalGain": 0
+    },
+    {
+      "timestamp": "2026-07-09T21:20:18.079Z",
+      "stats": {
+        "Overall": {
+          "rank": 305269,
+          "level": 2125,
+          "xp": 189774687
+        },
+        "Attack": {
+          "rank": 203494,
+          "level": 99,
+          "xp": 16175007
+        },
+        "Defence": {
+          "rank": 225196,
+          "level": 99,
+          "xp": 14465860
+        },
+        "Strength": {
+          "rank": 232391,
+          "level": 99,
+          "xp": 20960336
+        },
+        "Hitpoints": {
+          "rank": 273054,
+          "level": 99,
+          "xp": 27752116
+        },
+        "Ranged": {
+          "rank": 325675,
+          "level": 99,
+          "xp": 20593784
+        },
+        "Prayer": {
+          "rank": 502607,
+          "level": 83,
+          "xp": 2819447
+        },
+        "Magic": {
+          "rank": 522313,
+          "level": 99,
+          "xp": 13111842
+        },
+        "Cooking": {
+          "rank": 545791,
+          "level": 94,
+          "xp": 8416264
+        },
+        "Woodcutting": {
+          "rank": 594588,
+          "level": 85,
+          "xp": 3544299
+        },
+        "Fletching": {
+          "rank": 461202,
+          "level": 91,
+          "xp": 5951402
+        },
+        "Fishing": {
+          "rank": 416744,
+          "level": 89,
+          "xp": 5144888
+        },
+        "Firemaking": {
+          "rank": 665949,
+          "level": 89,
+          "xp": 5270356
+        },
+        "Crafting": {
+          "rank": 322844,
+          "level": 93,
+          "xp": 7406724
+        },
+        "Smithing": {
+          "rank": 508133,
+          "level": 84,
+          "xp": 2954452
+        },
+        "Mining": {
+          "rank": 759748,
+          "level": 80,
+          "xp": 2101265
+        },
+        "Herblore": {
+          "rank": 345677,
+          "level": 89,
+          "xp": 5116002
+        },
+        "Agility": {
+          "rank": 451758,
+          "level": 81,
+          "xp": 2343609
+        },
+        "Thieving": {
+          "rank": 532434,
+          "level": 82,
+          "xp": 2470566
+        },
+        "Slayer": {
+          "rank": 260731,
+          "level": 98,
+          "xp": 12222708
+        },
+        "Farming": {
+          "rank": 667168,
+          "level": 87,
+          "xp": 4014602
+        },
+        "Runecrafting": {
+          "rank": 515555,
+          "level": 76,
+          "xp": 1417512
+        },
+        "Hunter": {
+          "rank": 506728,
+          "level": 81,
+          "xp": 2406589
+        },
+        "Construction": {
+          "rank": 683192,
+          "level": 82,
+          "xp": 2564824
+        }
+      },
+      "gains": {
+        "Overall": 256282,
+        "Strength": 30210,
+        "Hitpoints": 10807,
+        "Ranged": 2231,
+        "Magic": 440,
+        "Herblore": 203530,
+        "Slayer": 9064
+      },
+      "totalGain": 256282
     }
   ]
 }
