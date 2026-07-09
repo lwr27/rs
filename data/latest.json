@@ -1,0 +1,17 @@
+{
+  "updated": "2026-07-09T08:34:20.418Z",
+  "players": [
+    {
+      "username": "6LR",
+      "error": "ENOENT: no such file or directory, open '/home/runner/work/rs/rs/data/snapshots/6lr.json'"
+    },
+    {
+      "username": "Iron Swiifty",
+      "error": "Hiscores request failed for Iron Swiifty: 404"
+    },
+    {
+      "username": "5JV",
+      "error": "ENOENT: no such file or directory, open '/home/runner/work/rs/rs/data/snapshots/5jv.json'"
+    }
+  ]
+}
