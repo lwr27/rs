@@ -4,9 +4,17 @@ on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch: {}
+  push:
+    branches: [main]
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   track:
@@ -28,3 +36,26 @@ jobs:
           git add data/
           git diff --staged --quiet || git commit -m "Update XP snapshots [skip ci]"
           git push
+
+  deploy:
+    needs: track
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Pull latest commit
+        run: git pull
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
