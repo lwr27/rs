@@ -6,30 +6,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
-    --rs-bg: #14100b;
-    --rs-panel: #4c4234;
-    --rs-panel-light: #6b5d47;
-    --rs-panel-dark: #2e2820;
-    --rs-cell: #3e362a;
-    --rs-cell-light: #574c3a;
-    --rs-cell-dark: #241f18;
-    --rs-border-light: #8a7859;
-    --rs-border-dark: #100d09;
-    --rs-gold: #ffff00;
-    --rs-gold-dim: #ff981f;
-    --rs-text: #ffffff;
-    --rs-text-dim: #c8b98f;
-    --rs-green: #00ff00;
-    --rs-red: #ff0000;
-    --rs-scroll: #95784a;
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-border: #262d38;
+    --cell: #1c2330;
+    --accent: #4f8ef0;
+    --accent-dim: #2c5aa8;
+    --text: #e6edf3;
+    --text-dim: #8b98a9;
+    --text-faint: #5c6674;
+    --bar-track: #2a3241;
+    --scroll: #3a4658;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
-    background: var(--rs-bg);
-    background-image:
-      repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px);
-    color: var(--rs-text-dim);
+    font-family: 'Segoe UI', 'Trebuchet MS', Verdana, sans-serif;
+    background: var(--bg);
+    color: var(--text-dim);
     min-height: 100vh;
     padding: 12px;
   }
@@ -38,15 +31,13 @@
     align-items: baseline;
     justify-content: space-between;
     margin-bottom: 10px;
-    padding: 6px 10px;
-    background: var(--rs-panel);
-    border-top: 2px solid var(--rs-border-light);
-    border-left: 2px solid var(--rs-border-light);
-    border-right: 2px solid var(--rs-border-dark);
-    border-bottom: 2px solid var(--rs-border-dark);
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
   }
-  header h1 { color: var(--rs-gold); font-size: 1.3rem; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; letter-spacing: 0.5px; }
-  header .updated { color: var(--rs-text-dim); font-size: 0.8rem; }
+  header h1 { color: var(--text); font-size: 1.3rem; font-weight: 600; }
+  header .updated { color: var(--text-faint); font-size: 0.8rem; }
 
   .board {
     display: grid;
@@ -57,21 +48,19 @@
   }
 
   .player-col {
-    background: #5a4a32;
-    border: 4px solid #3a2f1f;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 10px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    box-shadow: inset 0 0 0 1px #7a6642;
   }
   .player-name {
     text-align: center;
-    color: var(--rs-gold);
-    font-size: 1.1rem;
-    font-weight: bold;
-    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 600;
     padding: 4px;
   }
 
@@ -99,71 +88,61 @@
     display: block;
     font-size: clamp(11px, 3.4cqw, 17px);
     font-weight: bold;
-    font-family: 'Trebuchet MS', Verdana, sans-serif;
-    color: var(--rs-gold);
+    color: var(--accent);
     text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
   }
-  .stat-overlay .sfrac {
-    display: block;
-    font-size: clamp(9px, 2.7cqw, 13px);
-    font-weight: bold;
-    color: var(--rs-gold);
-    text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
-    opacity: 0.9;
+  .stat-overlay .xp-bar-track {
+    width: 26px;
+    height: 3px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 2px;
+    margin-top: 2px;
+    overflow: hidden;
   }
-  .stat-overlay.gained .slevel { color: var(--rs-green); }
-  .stat-overlay .gain-badge {
-    position: absolute; top: -10px; right: -8px;
-    background: #14110c; color: var(--rs-green);
-    font-size: 8px; font-weight: bold;
-    padding: 1px 3px; border: 1px solid var(--rs-green); border-radius: 2px;
-    white-space: nowrap; z-index: 3;
+  .stat-overlay .xp-bar-fill {
+    height: 100%;
+    background: var(--accent);
   }
   .total-overlay {
     position: absolute;
     left: 50.8%; top: 93.8%; transform: translate(-50%, -50%);
     text-align: center; line-height: 1.2;
   }
-  .total-overlay .tv { color: var(--rs-gold); font-weight: bold; font-size: clamp(12px, 3.8cqw, 18px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
-  .total-overlay .tg { display: block; color: var(--rs-green); font-size: clamp(7px, 2cqw, 10px); }
+  .total-overlay .tv { color: var(--accent); font-weight: bold; font-size: clamp(12px, 3.8cqw, 18px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
 
   .section-label {
-    color: var(--rs-gold-dim); font-size: 0.72rem; text-transform: uppercase;
+    color: var(--text-faint); font-size: 0.72rem; text-transform: uppercase;
     letter-spacing: 0.5px; padding: 3px 6px;
-    background: var(--rs-cell-dark);
-    border-top: 1px solid var(--rs-border-dark);
-    border-left: 1px solid var(--rs-border-dark);
+    border-bottom: 1px solid var(--panel-border);
   }
 
-  .feed { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
-  .feed::-webkit-scrollbar { width: 8px; }
-  .feed::-webkit-scrollbar-thumb { background: var(--rs-scroll); border-radius: 2px; }
-  .feed::-webkit-scrollbar-track { background: var(--rs-cell); }
-  .feed-item {
-    background: var(--rs-cell); border: 1px solid #000; padding: 4px 8px;
-    font-size: 0.72rem; display: flex; justify-content: space-between; gap: 8px;
+  .session-log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+  .session-log::-webkit-scrollbar { width: 8px; }
+  .session-log::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 2px; }
+  .session-log::-webkit-scrollbar-track { background: var(--cell); }
+  .session-item {
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 4px;
+    padding: 6px 8px; font-size: 0.72rem;
   }
-  .feed-item .fs { color: var(--rs-text-dim); }
-  .feed-item .fx { color: var(--rs-green); font-weight: bold; white-space: nowrap; }
-  .feed-item .ft { color: #8a7d63; font-size: 0.65rem; white-space: nowrap; }
-  .feed-empty { color: #8a7d63; font-size: 0.72rem; text-align: center; padding: 12px; }
-
-  .graph-wrap { background: var(--rs-cell); border: 1px solid #000; padding: 6px; height: 140px; position: relative; }
+  .session-item .srow { display: flex; justify-content: space-between; align-items: center; }
+  .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
+  .session-item .stotal { color: var(--accent); font-weight: bold; }
+  .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
+  .session-empty { color: var(--text-faint); font-size: 0.72rem; text-align: center; padding: 12px; }
 
   .tooltip {
     display: none; position: absolute; z-index: 20;
     bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
-    background: #0e0c08; border: 1px solid var(--rs-border-light); color: var(--rs-text);
-    font-size: 0.68rem; padding: 6px 8px; white-space: nowrap; border-radius: 2px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.6); min-width: 130px;
+    background: #05070a; border: 1px solid var(--panel-border); color: var(--text);
+    font-size: 0.68rem; padding: 6px 8px; white-space: nowrap; border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6); min-width: 130px;
   }
   .tooltip .tr { display: flex; justify-content: space-between; gap: 14px; }
   .tooltip .tr + .tr { margin-top: 2px; }
-  .tooltip .th { color: var(--rs-gold); font-weight: bold; border-bottom: 1px solid var(--rs-border-light); margin-bottom: 3px; padding-bottom: 2px; }
-  .tooltip .hist { color: #8a7d63; font-size: 0.62rem; margin-top: 4px; border-top: 1px solid var(--rs-border-light); padding-top: 3px; white-space: normal; }
-  .skill-cell:hover .tooltip { display: block; }
+  .tooltip .th { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; padding-bottom: 2px; }
+  .stat-overlay:hover .tooltip { display: block; }
 
-  .error { color: var(--rs-red); text-align: center; padding: 1rem; font-size: 0.85rem; }
+  .error { color: #e5484d; text-align: center; padding: 1rem; font-size: 0.85rem; }
 
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
@@ -178,63 +157,7 @@
 
   <div class="board" id="board"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script>
-    const SKILL_ORDER = [
-      "Attack", "Hitpoints", "Mining",
-      "Strength", "Agility", "Smithing",
-      "Defence", "Herblore", "Fishing",
-      "Ranged", "Thieving", "Cooking",
-      "Prayer", "Crafting", "Firemaking",
-      "Magic", "Fletching", "Woodcutting",
-      "Runecrafting", "Slayer", "Farming",
-      "Construction", "Hunter", "Sailing"
-    ];
-    const ICON_FILE_OVERRIDES = { Runecrafting: "Runecraft" };
-    function skillIcon(skill) {
-      const file = ICON_FILE_OVERRIDES[skill] || skill;
-      return '<img class="skill-icon" src="assets/skills/' + file + '_icon.png" alt="' + skill + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
-    }
-    const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-    const fmt = n => n.toLocaleString();
-    function timeAgo(iso) {
-      const diff = Date.now() - new Date(iso).getTime();
-      const m = Math.round(diff / 60000);
-      if (m < 60) return m + "m ago";
-      const h = Math.round(m / 60);
-      if (h < 24) return h + "h ago";
-      return Math.round(h / 24) + "d ago";
-    }
-
-    let charts = [];
-
-    async function loadHistory(username) {
-      const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
-      try {
-        const res = await fetch("data/snapshots/" + safe + ".json");
-        if (!res.ok) return null;
-        return await res.json();
-      } catch { return null; }
-    }
-
-    function buildTooltip(skill, data, gain, history) {
-      const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
-      let html = '<div class="th">' + skill + '</div>' +
-        '<div class="tr"><span>Level</span><span>' + data.level + '</span></div>' +
-        '<div class="tr"><span>XP</span><span>' + fmt(data.xp) + '</span></div>' +
-        '<div class="tr"><span>Rank</span><span>' + rankText + '</span></div>';
-      if (gain > 0) html += '<div class="tr"><span>This run</span><span style="color:#00ff00">+' + fmt(gain) + '</span></div>';
-      if (history && history.length) {
-        const recent = history.filter(h => h.gains && h.gains[skill] > 0).slice(-3).reverse();
-        if (recent.length) {
-          html += '<div class="hist">Recent: ' +
-            recent.map(h => '+' + fmt(h.gains[skill]) + ' (' + timeAgo(h.timestamp) + ')').join(", ") + '</div>';
-        }
-      }
-      return html;
-    }
-
-    // Coordinates measured directly from assets/skills/Skills_panel.png (204x275)
     const ROW_Y = [8.0, 18.9, 29.9, 40.7, 51.7, 62.6, 73.4, 84.3];
     const COL_X = [25.9, 56.8, 87.7];
     const GRID_SKILLS = [
@@ -247,6 +170,52 @@
       ["Runecrafting", "Slayer", "Farming"],
       ["Construction", "Hunter", "Sailing"]
     ];
+    const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const fmt = n => n.toLocaleString();
+    function timeAgo(iso) {
+      const diff = Date.now() - new Date(iso).getTime();
+      const m = Math.round(diff / 60000);
+      if (m < 60) return m + "m ago";
+      const h = Math.round(m / 60);
+      if (h < 24) return h + "h ago";
+      return Math.round(h / 24) + "d ago";
+    }
+
+    // Standard OSRS xp-for-level table (levels 1-99)
+    const XP_TABLE = (() => {
+      const table = [0, 0];
+      let total = 0;
+      for (let lvl = 1; lvl < 99; lvl++) {
+        total += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
+        table.push(Math.floor(total / 4));
+      }
+      return table; // XP_TABLE[level] = xp required to reach that level
+    })();
+    function progressToNextLevel(level, xp) {
+      if (level >= 99) return 1;
+      const cur = XP_TABLE[level] || 0;
+      const next = XP_TABLE[level + 1] || cur + 1;
+      return Math.max(0, Math.min(1, (xp - cur) / (next - cur)));
+    }
+
+    async function loadHistory(username) {
+      const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      try {
+        const res = await fetch("data/snapshots/" + safe + ".json");
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    function buildTooltip(skill, data) {
+      const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
+      const pct = Math.round(progressToNextLevel(data.level, data.xp) * 100);
+      return '<div class="th">' + skill + '</div>' +
+        '<div class="tr"><span>Level</span><span>' + data.level + '</span></div>' +
+        '<div class="tr"><span>XP</span><span>' + fmt(data.xp) + '</span></div>' +
+        '<div class="tr"><span>Rank</span><span>' + rankText + '</span></div>' +
+        '<div class="tr"><span>Next level</span><span>' + pct + '%</span></div>';
+    }
 
     function renderColumn(player, history) {
       const col = document.createElement("div");
@@ -271,114 +240,59 @@
       GRID_SKILLS.forEach((rowSkills, r) => {
         rowSkills.forEach((skill, c) => {
           const data = player.stats[skill] || { level: 1, xp: 0, rank: -1 };
-          const gain = (player.gains && player.gains[skill]) || 0;
+          const pct = Math.round(progressToNextLevel(data.level, data.xp) * 100);
           const overlay = document.createElement("div");
-          overlay.className = "stat-overlay" + (gain > 0 ? " gained" : "");
+          overlay.className = "stat-overlay";
           overlay.style.left = COL_X[c] + "%";
           overlay.style.top = ROW_Y[r] + "%";
           overlay.innerHTML =
             '<span class="slevel">' + data.level + '</span>' +
-            '<span class="sfrac">/ ' + data.level + '</span>' +
-            (gain > 0 ? '<span class="gain-badge">+' + fmt(gain) + '</span>' : "") +
-            '<div class="tooltip">' + buildTooltip(skill, data, gain, history && history.history) + '</div>';
+            '<div class="xp-bar-track"><div class="xp-bar-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="tooltip">' + buildTooltip(skill, data) + '</div>';
           panel.appendChild(overlay);
         });
       });
 
       const totalOverlay = document.createElement("div");
       totalOverlay.className = "total-overlay";
-      totalOverlay.innerHTML =
-        '<span class="tv">' + player.totalLevel + '</span>' +
-        (player.totalGain > 0 ? '<span class="tg">+' + fmt(player.totalGain) + ' xp</span>' : '');
+      totalOverlay.innerHTML = '<span class="tv">' + player.totalLevel + '</span>';
       panel.appendChild(totalOverlay);
 
       col.appendChild(panel);
 
-      const feedLabel = document.createElement("div");
-      feedLabel.className = "section-label";
-      feedLabel.textContent = "Recent gains";
-      col.appendChild(feedLabel);
+      const logLabel = document.createElement("div");
+      logLabel.className = "section-label";
+      logLabel.textContent = "Session log (7 days)";
+      col.appendChild(logLabel);
 
-      const feed = document.createElement("div");
-      feed.className = "feed";
-      const events = [];
-      if (history && history.history) {
-        const cutoff = Date.now() - WINDOW_MS;
-        history.history.forEach(entry => {
-          if (new Date(entry.timestamp).getTime() < cutoff) return;
-          Object.entries(entry.gains || {}).forEach(([skill, xp]) => {
-            if (skill !== "Overall" && xp > 0) events.push({ skill, xp, timestamp: entry.timestamp });
-          });
-        });
-      }
-      events.reverse();
-      if (events.length) {
-        events.slice(0, 40).forEach(ev => {
+      const log = document.createElement("div");
+      log.className = "session-log";
+      const cutoff = Date.now() - WINDOW_MS;
+      const sessions = (history && history.history ? history.history : [])
+        .filter(e => new Date(e.timestamp).getTime() >= cutoff && e.totalGain > 0)
+        .slice()
+        .reverse();
+
+      if (sessions.length) {
+        sessions.slice(0, 60).forEach(s => {
           const item = document.createElement("div");
-          item.className = "feed-item";
+          item.className = "session-item";
+          const breakdown = Object.entries(s.gains || {})
+            .filter(([sk, xp]) => sk !== "Overall" && xp > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([sk, xp]) => sk + " +" + fmt(xp))
+            .join(", ");
           item.innerHTML =
-            '<span class="fs">' + ev.skill + '</span>' +
-            '<span class="fx">+' + fmt(ev.xp) + '</span>' +
-            '<span class="ft">' + timeAgo(ev.timestamp) + '</span>';
-          feed.appendChild(item);
+            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(s.totalGain) + ' xp</span></div>' +
+            (breakdown ? '<div class="sbreak">' + breakdown + '</div>' : '');
+          log.appendChild(item);
         });
       } else {
-        feed.innerHTML = '<div class="feed-empty">No gains recorded yet</div>';
+        log.innerHTML = '<div class="session-empty">No sessions recorded yet</div>';
       }
-      col.appendChild(feed);
-
-      const graphLabel = document.createElement("div");
-      graphLabel.className = "section-label";
-      graphLabel.textContent = "Total xp/hr (7 days)";
-      col.appendChild(graphLabel);
-
-      const graphWrap = document.createElement("div");
-      graphWrap.className = "graph-wrap";
-      const canvas = document.createElement("canvas");
-      graphWrap.appendChild(canvas);
-      col.appendChild(graphWrap);
-
-      setTimeout(() => renderChart(canvas, history), 0);
+      col.appendChild(log);
 
       return col;
-    }
-
-    function renderChart(canvas, history) {
-      if (!history || !history.history || history.history.length < 2) return;
-      const cutoff = Date.now() - WINDOW_MS;
-      const points = history.history
-        .filter(e => new Date(e.timestamp).getTime() >= cutoff)
-        .map(e => ({ t: new Date(e.timestamp), gain: e.totalGain || 0 }));
-      if (points.length < 2) return;
-
-      const labels = points.map(p => p.t.toLocaleString([], { weekday: "short", hour: "2-digit" }));
-      const data = points.map(p => p.gain);
-
-      charts.push(new Chart(canvas, {
-        type: "line",
-        data: {
-          labels: labels,
-          datasets: [{
-            data: data,
-            borderColor: "#ffff00",
-            backgroundColor: "rgba(255,255,0,0.1)",
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.3,
-            fill: true
-          }]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: {
-            callbacks: { label: ctx => "+" + fmt(ctx.parsed.y) + " xp" }
-          }},
-          scales: {
-            x: { ticks: { color: "#8a7d63", font: { size: 8 }, maxTicksLimit: 6 }, grid: { color: "rgba(93,81,64,0.3)" } },
-            y: { ticks: { color: "#8a7d63", font: { size: 8 }, callback: v => v >= 1000 ? (v/1000)+"k" : v }, grid: { color: "rgba(93,81,64,0.3)" }, beginAtZero: true }
-          }
-        }
-      }));
     }
 
     async function init() {
