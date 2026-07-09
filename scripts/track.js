@@ -29,7 +29,8 @@ function ensureSnapshotDir() {
 }
 
 function snapshotPath(username) {
-  return path.join(SNAPSHOT_DIR, `${username.toLowerCase()}.json`);
+  const safeName = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  return path.join(SNAPSHOT_DIR, `${safeName}.json`);
 }
 
 async function fetchStats(username, mode) {
