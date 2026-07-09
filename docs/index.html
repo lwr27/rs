@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OSRS XP Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; }
+  .updated { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .player { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .player h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin: 0.25rem 0; }
+  .gain { color: #1a7f37; font-weight: 600; }
+  .error { color: #b91c1c; }
+</style>
+</head>
+<body>
+  <h1>OSRS XP tracker</h1>
+  <p class="updated" id="updated">Loading...</p>
+  <div id="players"></div>
+
+  <script>
+    fetch("../data/latest.json")
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById("updated").textContent =
+          "Last updated: " + new Date(data.updated).toLocaleString();
+
+        const container = document.getElementById("players");
+        data.players.forEach(p => {
+          const div = document.createElement("div");
+          div.className = "player";
+          if (p.error) {
+            div.innerHTML = `<h2>${p.username}</h2><p class="error">Error: ${p.error}</p>`;
+          } else {
+            const gainRows = Object.entries(p.gains || {})
+              .map(([skill, xp]) => `<div class="stat-row"><span>${skill}</span><span class="gain">+${xp.toLocaleString()} xp</span></div>`)
+              .join("");
+            div.innerHTML = `
+              <h2>${p.username}</h2>
+              <div class="stat-row"><span>Total level</span><span>${p.totalLevel}</span></div>
+              <div class="stat-row"><span>Total xp</span><span>${p.totalXp.toLocaleString()}</span></div>
+              <div class="stat-row"><span>Gained this run</span><span class="gain">+${p.totalGain.toLocaleString()} xp</span></div>
+              ${gainRows}
+            `;
+          }
+          container.appendChild(div);
+        });
+      })
+      .catch(err => {
+        document.getElementById("updated").textContent = "Failed to load data.";
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
