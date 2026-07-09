@@ -24,6 +24,10 @@ function loadPlayers() {
   return JSON.parse(fs.readFileSync(PLAYERS_FILE, "utf8"));
 }
 
+function ensureSnapshotDir() {
+  fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+}
+
 function snapshotPath(username) {
   return path.join(SNAPSHOT_DIR, `${username.toLowerCase()}.json`);
 }
@@ -87,6 +91,7 @@ function appendSnapshot(username, entry) {
 }
 
 async function main() {
+  ensureSnapshotDir();
   const players = loadPlayers();
   const timestamp = new Date().toISOString();
   const latest = { updated: timestamp, players: [] };
