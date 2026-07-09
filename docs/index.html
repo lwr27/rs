@@ -176,7 +176,7 @@
       return wrap;
     }
 
-    fetch("../data/latest.json")
+    fetch("data/latest.json")
       .then(r => r.json())
       .then(data => {
         document.getElementById("updated").textContent =
