@@ -245,7 +245,7 @@
       const grid = document.createElement("div");
       grid.className = "skill-grid";
       SKILL_ORDER.forEach(skill => {
-        const data = player.stats[skill];
+        const data = player.stats[skill] || { level: 1, xp: 0, rank: -1 };
         const gain = (player.gains && player.gains[skill]) || 0;
         const cell = document.createElement("div");
         cell.className = "skill-cell" + (gain > 0 ? " gained" : "");
