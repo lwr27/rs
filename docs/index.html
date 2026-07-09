@@ -182,8 +182,7 @@
       "Construction", "Hunter"
     ];
     function skillIcon(skill) {
-      const file = skill.toLowerCase();
-      return '<img class="skill-icon" src="assets/skills/' + file + '_icon.png" alt="' + skill + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+      return '<img class="skill-icon" src="assets/skills/' + skill + '_icon.png" alt="' + skill + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
     }
     const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
     const fmt = n => n.toLocaleString();
