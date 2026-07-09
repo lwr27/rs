@@ -119,6 +119,18 @@
     border-bottom: 1px solid var(--panel-border);
   }
 
+  .kc-list { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+  .kc-list::-webkit-scrollbar { width: 8px; }
+  .kc-list::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 2px; }
+  .kc-list::-webkit-scrollbar-track { background: var(--cell); }
+  .kc-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 3px;
+    padding: 3px 8px; font-size: 0.7rem;
+  }
+  .kc-name { color: var(--text-dim); }
+  .kc-score { color: var(--accent); font-weight: bold; }
+
   .session-log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
   .session-log::-webkit-scrollbar { width: 8px; }
   .session-log::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 2px; }
@@ -272,6 +284,28 @@
 
       col.appendChild(panel);
 
+      // Boss / clue killcount panel
+      if (player.activities && Object.keys(player.activities).length) {
+        const kcLabel = document.createElement("div");
+        kcLabel.className = "section-label";
+        kcLabel.textContent = "Clues & bosses";
+        col.appendChild(kcLabel);
+
+        const kcList = document.createElement("div");
+        kcList.className = "kc-list";
+        Object.entries(player.activities)
+          .sort((a, b) => b[1].score - a[1].score)
+          .forEach(([name, data]) => {
+            const row = document.createElement("div");
+            row.className = "kc-row";
+            row.innerHTML =
+              '<span class="kc-name">' + name + '</span>' +
+              '<span class="kc-score">' + fmt(data.score) + '</span>';
+            kcList.appendChild(row);
+          });
+        col.appendChild(kcList);
+      }
+
       const logLabel = document.createElement("div");
       logLabel.className = "section-label";
       logLabel.textContent = "Session log (7 days)";
@@ -281,7 +315,8 @@
       log.className = "session-log";
       const cutoff = Date.now() - WINDOW_MS;
       const sessions = (history && history.history ? history.history : [])
-        .filter(e => new Date(e.timestamp).getTime() >= cutoff && e.totalGain > 0)
+        .filter(e => new Date(e.timestamp).getTime() >= cutoff &&
+          (e.totalGain > 0 || (e.activityGains && Object.keys(e.activityGains).length)))
         .slice()
         .reverse();
 
@@ -294,9 +329,14 @@
             .sort((a, b) => b[1] - a[1])
             .map(([sk, xp]) => sk + " +" + fmt(xp))
             .join(", ");
+          const activityBreakdown = Object.entries(s.activityGains || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, score]) => name + " +" + fmt(score))
+            .join(", ");
+          const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ");
           item.innerHTML =
             '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(s.totalGain) + ' xp</span></div>' +
-            (breakdown ? '<div class="sbreak">' + breakdown + '</div>' : '');
+            (fullBreakdown ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
           log.appendChild(item);
         });
       } else {
