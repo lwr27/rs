@@ -5,8 +5,47 @@ const SKILLS = [
   "Overall", "Attack", "Defence", "Strength", "Hitpoints", "Ranged",
   "Prayer", "Magic", "Cooking", "Woodcutting", "Fletching", "Fishing",
   "Firemaking", "Crafting", "Smithing", "Mining", "Herblore", "Agility",
-  "Thieving", "Slayer", "Farming", "Runecrafting", "Hunter", "Construction"
+  "Thieving", "Slayer", "Farming", "Runecrafting", "Hunter", "Construction",
+  "Sailing"
 ];
+
+// Exact order per the official hiscores index_lite.ws response (OSRS).
+// Each of these lines is "rank,score" (2 values), unlike skills which are "rank,level,xp".
+const ACTIVITIES = [
+  "Grid Points", "League Points", "Deadman Points",
+  "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
+  "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
+  "Clue Scrolls (all)", "Clue Scrolls (beginner)", "Clue Scrolls (easy)",
+  "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
+  "Clue Scrolls (master)",
+  "LMS - Rank", "PvP Arena - Rank", "Soul Wars Zeal", "Rifts closed",
+  "Colosseum Glory", "Collections Logged",
+  "Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor", "Artio",
+  "Barrows Chests", "Brutus", "Bryophyta", "Callisto", "Cal'varion",
+  "Cerberus", "Chambers of Xeric", "Chambers of Xeric: Challenge Mode",
+  "Chaos Elemental", "Chaos Fanatic", "Commander Zilyana", "Corporeal Beast",
+  "Crazy Archaeologist", "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
+  "Deranged Archaeologist", "Doom of Mokhaiotl", "Duke Sucellus",
+  "General Graardor", "Giant Mole", "Grotesque Guardians", "Hespori",
+  "Kalphite Queen", "King Black Dragon", "Kraken", "Kree'Arra", "K'ril Tsutsaroth",
+  "Lunar Chests", "Mimic", "Nex", "Nightmare", "Phosani's Nightmare", "Obor",
+  "Phantom Muspah", "Sarachnis", "Scorpia", "Scurrius", "Shellbane Gryphon",
+  "Skotizo", "Sol Heredit", "Spindel", "Tempoross", "The Gauntlet",
+  "The Corrupted Gauntlet", "The Hueycoatl", "The Leviathan", "The Royal Titans",
+  "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
+  "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
+  "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
+  "Wintertodt", "Yama", "Zalcano", "Zulrah"
+];
+
+// Curated subset actually surfaced in the dashboard (clues + boss/raid killcounts).
+const NOTABLE_ACTIVITIES = ACTIVITIES.filter(a =>
+  a.startsWith("Clue Scrolls") ||
+  !["Grid Points", "League Points", "Deadman Points", "Bounty Hunter - Hunter",
+    "Bounty Hunter - Rogue", "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
+    "LMS - Rank", "PvP Arena - Rank", "Soul Wars Zeal", "Rifts closed",
+    "Colosseum Glory", "Collections Logged"].includes(a)
+);
 
 const MODE_PATH = {
   normal: "hiscore_oldschool",
@@ -44,13 +83,22 @@ async function fetchStats(username, mode) {
   }
   const text = (await res.text()).trim();
   const lines = text.split("\n");
+
   const stats = {};
   SKILLS.forEach((skill, i) => {
     const parts = (lines[i] || "-1,-1,-1").split(",").map(Number);
     const [rank, level, xp] = parts;
     stats[skill] = { rank, level: level < 0 ? 0 : level, xp: xp < 0 ? 0 : xp };
   });
-  return stats;
+
+  const activities = {};
+  ACTIVITIES.forEach((name, i) => {
+    const line = lines[SKILLS.length + i] || "-1,-1";
+    const [rank, score] = line.split(",").map(Number);
+    activities[name] = { rank, score: score < 0 ? 0 : score };
+  });
+
+  return { stats, activities };
 }
 
 function loadPreviousSnapshot(username) {
@@ -76,6 +124,16 @@ function diffXp(prevStats, currStats) {
   return { gains, totalGain };
 }
 
+function diffActivities(prevActivities, currActivities) {
+  const gains = {};
+  for (const name of ACTIVITIES) {
+    const prevScore = prevActivities?.[name]?.score ?? currActivities[name].score;
+    const delta = currActivities[name].score - prevScore;
+    if (delta > 0) gains[name] = delta;
+  }
+  return gains;
+}
+
 function appendSnapshot(username, entry) {
   const file = snapshotPath(username);
   let raw = { username, history: [] };
@@ -99,12 +157,26 @@ async function main() {
 
   for (const { username, mode } of players) {
     try {
-      const currStats = await fetchStats(username, mode);
+      const { stats: currStats, activities: currActivities } = await fetchStats(username, mode);
       const prevEntry = loadPreviousSnapshot(username);
       const { gains, totalGain } = diffXp(prevEntry?.stats, currStats);
+      const activityGains = diffActivities(prevEntry?.activities, currActivities);
 
-      const entry = { timestamp, stats: currStats, gains, totalGain };
+      const entry = {
+        timestamp,
+        stats: currStats,
+        activities: currActivities,
+        gains,
+        totalGain,
+        activityGains
+      };
       appendSnapshot(username, entry);
+
+      // Only include non-zero notable activities in latest.json to keep payload small.
+      const notable = {};
+      NOTABLE_ACTIVITIES.forEach(name => {
+        if (currActivities[name].score > 0) notable[name] = currActivities[name];
+      });
 
       latest.players.push({
         username,
@@ -112,10 +184,12 @@ async function main() {
         totalXp: currStats.Overall.xp,
         stats: currStats,
         gains,
-        totalGain
+        totalGain,
+        activities: notable,
+        activityGains
       });
 
-      console.log(`${username}: +${totalGain.toLocaleString()} xp this run`);
+      console.log(`${username}: +${totalGain.toLocaleString()} xp this run, ${Object.keys(activityGains).length} activity gain(s)`);
     } catch (err) {
       console.error(`Failed to update ${username}: ${err.message}`);
       latest.players.push({ username, error: err.message });
