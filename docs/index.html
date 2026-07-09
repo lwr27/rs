@@ -5,119 +5,148 @@
 <title>OSRS XP Tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  * { box-sizing: border-box; }
+  :root {
+    --rs-bg: #1a1712;
+    --rs-panel: #494034;
+    --rs-panel-dark: #3e3529;
+    --rs-cell: #2b2620;
+    --rs-border: #000000;
+    --rs-border-light: #5d5140;
+    --rs-gold: #ffff00;
+    --rs-gold-dim: #ff981f;
+    --rs-text: #ffffff;
+    --rs-text-dim: #c8b98f;
+    --rs-green: #00ff00;
+    --rs-red: #ff0000;
+    --rs-scroll: #95784a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Trebuchet MS', Verdana, sans-serif;
-    background: #14110c;
-    color: #ffd200;
-    max-width: 480px;
-    margin: 2rem auto;
-    padding: 0 1rem;
+    font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
+    background: var(--rs-bg);
+    color: var(--rs-text-dim);
+    min-height: 100vh;
+    padding: 12px;
   }
-  h1 { font-size: 1.2rem; color: #ffd200; text-align: center; margin-bottom: 0.25rem; }
-  .updated { color: #a89f8c; font-size: 0.75rem; text-align: center; margin-bottom: 1rem; }
-
-  .tabs { display: flex; gap: 4px; margin-bottom: 1rem; }
-  .tab {
-    flex: 1;
-    padding: 8px 4px;
-    text-align: center;
-    background: #3e3529;
-    border: 2px solid #5a4d38;
-    color: #cbbf9e;
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: bold;
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 0 4px;
   }
-  .tab.active { background: #5a4d38; color: #ffd200; border-color: #ffd200; }
+  header h1 { color: var(--rs-gold); font-size: 1.3rem; text-shadow: 1px 1px 0 #000; }
+  header .updated { color: var(--rs-text-dim); font-size: 0.8rem; }
 
-  .panel {
-    background: #3e3529;
-    border: 3px solid #5a4d38;
-    border-radius: 4px;
-    padding: 6px;
-    display: none;
-  }
-  .panel.active { display: block; }
-
-  .grid {
+  .board {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-  }
-  .skill-cell {
-    position: relative;
-    background: #14110c;
-    border: 1px solid #000;
-    padding: 6px 4px;
-    text-align: center;
-    cursor: default;
-  }
-  .skill-cell .name {
-    font-size: 0.6rem;
-    color: #cbbf9e;
-    text-transform: uppercase;
-    margin-bottom: 2px;
-  }
-  .skill-cell .level {
-    font-size: 1rem;
-    font-weight: bold;
-    color: #ffffff;
-  }
-  .skill-cell .gain-dot {
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4ade80;
+    gap: 12px;
+    max-width: 1900px;
+    margin: 0 auto;
   }
 
-  .total-bar {
-    grid-column: span 3;
-    background: #14110c;
-    border: 1px solid #000;
+  .player-col {
+    background: var(--rs-panel);
+    border: 2px solid var(--rs-border);
+    border-radius: 3px;
     padding: 6px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.85rem;
+    flex-direction: column;
+    gap: 8px;
   }
-  .total-bar .label { color: #cbbf9e; }
-  .total-bar .value { color: #fff; font-weight: bold; }
-  .total-bar .gain { color: #4ade80; font-weight: bold; }
+  .player-name {
+    text-align: center;
+    color: var(--rs-gold);
+    font-size: 1.05rem;
+    font-weight: bold;
+    text-shadow: 1px 1px 0 #000;
+    padding: 4px;
+    border-bottom: 1px solid var(--rs-border-light);
+  }
+
+  .skill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+  .skill-cell {
+    position: relative;
+    background: var(--rs-cell);
+    border: 1px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    min-height: 34px;
+    cursor: default;
+  }
+  .skill-cell .sname { font-size: 0.62rem; color: var(--rs-text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+  .skill-cell .slevel { font-size: 0.95rem; font-weight: bold; color: var(--rs-gold); text-shadow: 1px 1px 0 #000; }
+  .skill-cell.gained { box-shadow: inset 0 0 0 1px var(--rs-green); }
+  .skill-cell .gain-badge {
+    position: absolute; top: -6px; right: -4px;
+    background: #14110c; color: var(--rs-green);
+    font-size: 0.55rem; font-weight: bold;
+    padding: 1px 4px; border: 1px solid var(--rs-green); border-radius: 2px;
+    z-index: 3;
+  }
+
+  .total-row {
+    grid-column: span 3;
+    background: var(--rs-cell);
+    border: 1px solid #000;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px; font-size: 0.85rem;
+  }
+  .total-row .tv { color: var(--rs-gold); font-weight: bold; }
+  .total-row .tg { color: var(--rs-green); font-weight: bold; }
+
+  .section-label {
+    color: var(--rs-gold-dim); font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 2px 4px; border-bottom: 1px solid var(--rs-border-light);
+  }
+
+  .feed { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+  .feed::-webkit-scrollbar { width: 8px; }
+  .feed::-webkit-scrollbar-thumb { background: var(--rs-scroll); border-radius: 2px; }
+  .feed::-webkit-scrollbar-track { background: var(--rs-cell); }
+  .feed-item {
+    background: var(--rs-cell); border: 1px solid #000; padding: 4px 8px;
+    font-size: 0.72rem; display: flex; justify-content: space-between; gap: 8px;
+  }
+  .feed-item .fs { color: var(--rs-text-dim); }
+  .feed-item .fx { color: var(--rs-green); font-weight: bold; white-space: nowrap; }
+  .feed-item .ft { color: #8a7d63; font-size: 0.65rem; white-space: nowrap; }
+  .feed-empty { color: #8a7d63; font-size: 0.72rem; text-align: center; padding: 12px; }
+
+  .graph-wrap { background: var(--rs-cell); border: 1px solid #000; padding: 6px; height: 140px; position: relative; }
 
   .tooltip {
-    display: none;
-    position: absolute;
-    z-index: 10;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-bottom: 6px;
-    background: #000;
-    border: 1px solid #5a4d38;
-    color: #fff;
-    font-size: 0.7rem;
-    padding: 6px 8px;
-    white-space: nowrap;
-    border-radius: 3px;
+    display: none; position: absolute; z-index: 20;
+    bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
+    background: #0e0c08; border: 1px solid var(--rs-border-light); color: var(--rs-text);
+    font-size: 0.68rem; padding: 6px 8px; white-space: nowrap; border-radius: 2px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6); min-width: 130px;
   }
-  .tooltip .row { display: flex; justify-content: space-between; gap: 12px; }
-  .tooltip .row + .row { margin-top: 2px; }
+  .tooltip .tr { display: flex; justify-content: space-between; gap: 14px; }
+  .tooltip .tr + .tr { margin-top: 2px; }
+  .tooltip .th { color: var(--rs-gold); font-weight: bold; border-bottom: 1px solid var(--rs-border-light); margin-bottom: 3px; padding-bottom: 2px; }
+  .tooltip .hist { color: #8a7d63; font-size: 0.62rem; margin-top: 4px; border-top: 1px solid var(--rs-border-light); padding-top: 3px; white-space: normal; }
   .skill-cell:hover .tooltip { display: block; }
 
-  .error { color: #ef4444; text-align: center; padding: 1rem; }
+  .error { color: var(--rs-red); text-align: center; padding: 1rem; font-size: 0.85rem; }
+
+  @media (max-width: 1100px) {
+    .board { grid-template-columns: 1fr; max-width: 600px; }
+  }
 </style>
 </head>
 <body>
-  <h1>OSRS XP tracker</h1>
-  <p class="updated" id="updated">Loading...</p>
+  <header>
+    <h1>OSRS XP tracker</h1>
+    <span class="updated" id="updated">Loading...</span>
+  </header>
 
-  <div class="tabs" id="tabs"></div>
-  <div id="panels"></div>
+  <div class="board" id="board"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script>
     const SKILL_ORDER = [
       "Attack", "Hitpoints", "Mining",
@@ -129,90 +158,195 @@
       "Runecrafting", "Slayer", "Farming",
       "Construction", "Hunter"
     ];
+    const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const fmt = n => n.toLocaleString();
+    function timeAgo(iso) {
+      const diff = Date.now() - new Date(iso).getTime();
+      const m = Math.round(diff / 60000);
+      if (m < 60) return m + "m ago";
+      const h = Math.round(m / 60);
+      if (h < 24) return h + "h ago";
+      return Math.round(h / 24) + "d ago";
+    }
 
-    function fmt(n) { return n.toLocaleString(); }
+    let charts = [];
 
-    function buildTooltip(skill, data, gain) {
+    async function loadHistory(username) {
+      const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      try {
+        const res = await fetch("data/snapshots/" + safe + ".json");
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    function buildTooltip(skill, data, gain, history) {
       const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
-      let html = `
-        <div class="row"><span>${skill}</span><span></span></div>
-        <div class="row"><span>Level</span><span>${data.level}</span></div>
-        <div class="row"><span>XP</span><span>${fmt(data.xp)}</span></div>
-        <div class="row"><span>Rank</span><span>${rankText}</span></div>
-      `;
-      if (gain > 0) {
-        html += `<div class="row"><span>Gained</span><span style="color:#4ade80">+${fmt(gain)}</span></div>`;
+      let html = '<div class="th">' + skill + '</div>' +
+        '<div class="tr"><span>Level</span><span>' + data.level + '</span></div>' +
+        '<div class="tr"><span>XP</span><span>' + fmt(data.xp) + '</span></div>' +
+        '<div class="tr"><span>Rank</span><span>' + rankText + '</span></div>';
+      if (gain > 0) html += '<div class="tr"><span>This run</span><span style="color:#00ff00">+' + fmt(gain) + '</span></div>';
+      if (history && history.length) {
+        const recent = history.filter(h => h.gains && h.gains[skill] > 0).slice(-3).reverse();
+        if (recent.length) {
+          html += '<div class="hist">Recent: ' +
+            recent.map(h => '+' + fmt(h.gains[skill]) + ' (' + timeAgo(h.timestamp) + ')').join(", ") + '</div>';
+        }
       }
       return html;
     }
 
-    function renderPlayer(player) {
-      const wrap = document.createElement("div");
-      wrap.className = "grid";
+    function renderColumn(player, history) {
+      const col = document.createElement("div");
+      col.className = "player-col";
 
+      const name = document.createElement("div");
+      name.className = "player-name";
+      name.textContent = player.username;
+      col.appendChild(name);
+
+      if (player.error) {
+        const err = document.createElement("div");
+        err.className = "error";
+        err.textContent = player.error;
+        col.appendChild(err);
+        return col;
+      }
+
+      const grid = document.createElement("div");
+      grid.className = "skill-grid";
       SKILL_ORDER.forEach(skill => {
         const data = player.stats[skill];
         const gain = (player.gains && player.gains[skill]) || 0;
-
         const cell = document.createElement("div");
-        cell.className = "skill-cell";
-        cell.innerHTML = `
-          <div class="name">${skill}</div>
-          <div class="level">${data.level}</div>
-          ${gain > 0 ? '<div class="gain-dot"></div>' : ""}
-          <div class="tooltip">${buildTooltip(skill, data, gain)}</div>
-        `;
-        wrap.appendChild(cell);
+        cell.className = "skill-cell" + (gain > 0 ? " gained" : "");
+        cell.innerHTML =
+          '<span class="sname">' + skill.slice(0,3) + '</span>' +
+          '<span class="slevel">' + data.level + '</span>' +
+          (gain > 0 ? '<span class="gain-badge">+' + fmt(gain) + '</span>' : "") +
+          '<div class="tooltip">' + buildTooltip(skill, data, gain, history && history.history) + '</div>';
+        grid.appendChild(cell);
       });
+      const totalRow = document.createElement("div");
+      totalRow.className = "total-row";
+      totalRow.innerHTML =
+        '<span>Total: <span class="tv">' + player.totalLevel + '</span></span>' +
+        '<span><span class="tv">' + fmt(player.totalXp) + '</span> xp</span>' +
+        '<span class="tg">' + (player.totalGain > 0 ? "+" + fmt(player.totalGain) : "") + '</span>';
+      grid.appendChild(totalRow);
+      col.appendChild(grid);
 
-      const totalBar = document.createElement("div");
-      totalBar.className = "total-bar";
-      totalBar.innerHTML = `
-        <span class="label">Total level ${player.totalLevel} &middot; ${fmt(player.totalXp)} xp</span>
-        <span class="gain">${player.totalGain > 0 ? "+" + fmt(player.totalGain) + " xp" : ""}</span>
-      `;
-      wrap.appendChild(totalBar);
+      const feedLabel = document.createElement("div");
+      feedLabel.className = "section-label";
+      feedLabel.textContent = "Recent gains";
+      col.appendChild(feedLabel);
 
-      return wrap;
+      const feed = document.createElement("div");
+      feed.className = "feed";
+      const events = [];
+      if (history && history.history) {
+        const cutoff = Date.now() - WINDOW_MS;
+        history.history.forEach(entry => {
+          if (new Date(entry.timestamp).getTime() < cutoff) return;
+          Object.entries(entry.gains || {}).forEach(([skill, xp]) => {
+            if (skill !== "Overall" && xp > 0) events.push({ skill, xp, timestamp: entry.timestamp });
+          });
+        });
+      }
+      events.reverse();
+      if (events.length) {
+        events.slice(0, 40).forEach(ev => {
+          const item = document.createElement("div");
+          item.className = "feed-item";
+          item.innerHTML =
+            '<span class="fs">' + ev.skill + '</span>' +
+            '<span class="fx">+' + fmt(ev.xp) + '</span>' +
+            '<span class="ft">' + timeAgo(ev.timestamp) + '</span>';
+          feed.appendChild(item);
+        });
+      } else {
+        feed.innerHTML = '<div class="feed-empty">No gains recorded yet</div>';
+      }
+      col.appendChild(feed);
+
+      const graphLabel = document.createElement("div");
+      graphLabel.className = "section-label";
+      graphLabel.textContent = "Total xp/hr (7 days)";
+      col.appendChild(graphLabel);
+
+      const graphWrap = document.createElement("div");
+      graphWrap.className = "graph-wrap";
+      const canvas = document.createElement("canvas");
+      graphWrap.appendChild(canvas);
+      col.appendChild(graphWrap);
+
+      setTimeout(() => renderChart(canvas, history), 0);
+
+      return col;
     }
 
-    fetch("data/latest.json")
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById("updated").textContent =
-          "Last updated: " + new Date(data.updated).toLocaleString();
+    function renderChart(canvas, history) {
+      if (!history || !history.history || history.history.length < 2) return;
+      const cutoff = Date.now() - WINDOW_MS;
+      const points = history.history
+        .filter(e => new Date(e.timestamp).getTime() >= cutoff)
+        .map(e => ({ t: new Date(e.timestamp), gain: e.totalGain || 0 }));
+      if (points.length < 2) return;
 
-        const tabs = document.getElementById("tabs");
-        const panels = document.getElementById("panels");
+      const labels = points.map(p => p.t.toLocaleString([], { weekday: "short", hour: "2-digit" }));
+      const data = points.map(p => p.gain);
 
-        data.players.forEach((player, i) => {
-          const tab = document.createElement("div");
-          tab.className = "tab" + (i === 0 ? " active" : "");
-          tab.textContent = player.username;
-          tab.onclick = () => {
-            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-            document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-            tab.classList.add("active");
-            document.getElementById("panel-" + i).classList.add("active");
-          };
-          tabs.appendChild(tab);
-
-          const panel = document.createElement("div");
-          panel.className = "panel" + (i === 0 ? " active" : "");
-          panel.id = "panel-" + i;
-
-          if (player.error) {
-            panel.innerHTML = `<div class="error">${player.error}</div>`;
-          } else {
-            panel.appendChild(renderPlayer(player));
+      charts.push(new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            borderColor: "#ffff00",
+            backgroundColor: "rgba(255,255,0,0.1)",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: {
+            callbacks: { label: ctx => "+" + fmt(ctx.parsed.y) + " xp" }
+          }},
+          scales: {
+            x: { ticks: { color: "#8a7d63", font: { size: 8 }, maxTicksLimit: 6 }, grid: { color: "rgba(93,81,64,0.3)" } },
+            y: { ticks: { color: "#8a7d63", font: { size: 8 }, callback: v => v >= 1000 ? (v/1000)+"k" : v }, grid: { color: "rgba(93,81,64,0.3)" }, beginAtZero: true }
           }
-          panels.appendChild(panel);
-        });
-      })
-      .catch(err => {
+        }
+      }));
+    }
+
+    async function init() {
+      let data;
+      try {
+        const res = await fetch("data/latest.json");
+        data = await res.json();
+      } catch (err) {
         document.getElementById("updated").textContent = "Failed to load data.";
         console.error(err);
+        return;
+      }
+
+      document.getElementById("updated").textContent =
+        "Updated " + new Date(data.updated).toLocaleString();
+
+      const board = document.getElementById("board");
+      const histories = await Promise.all(data.players.map(p => loadHistory(p.username)));
+
+      data.players.forEach((player, i) => {
+        board.appendChild(renderColumn(player, histories[i]));
       });
+    }
+
+    init();
   </script>
 </body>
 </html>
