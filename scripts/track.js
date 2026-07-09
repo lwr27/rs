@@ -110,6 +110,7 @@ async function main() {
         username,
         totalLevel: currStats.Overall.level,
         totalXp: currStats.Overall.xp,
+        stats: currStats,
         gains,
         totalGain
       });
