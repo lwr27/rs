@@ -75,48 +75,54 @@
     padding: 4px;
   }
 
-  .skill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; position: relative; }
-  .skill-cell {
+  .panel-wrap {
     position: relative;
-    background:
-      radial-gradient(circle at 30% 25%, #8a8378 0%, #6b6459 40%, #565049 100%);
-    margin: 2px;
-    clip-path: polygon(15% 0%, 85% 0%, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0% 85%, 0% 15%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 6px;
-    min-height: 62px;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+    aspect-ratio: 204 / 275;
+    background-image: url('assets/skills/Skills_panel.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+  }
+  .stat-overlay {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    line-height: 1;
     cursor: default;
-    box-shadow: inset 0 0 0 2px #3a352e, inset 0 0 8px rgba(0,0,0,0.5);
+    padding: 2px 4px;
   }
-  .skill-cell:hover { filter: brightness(1.15); }
-  .skill-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.9)); }
-  .skill-cell .stext { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
-  .skill-cell .slevel { font-size: 1rem; font-weight: bold; color: var(--rs-gold); text-shadow: 1px 1px 0 #000; }
-  .skill-cell .sfrac { font-size: 0.7rem; color: var(--rs-gold); text-shadow: 1px 1px 0 #000; opacity: 0.85; }
-  .skill-cell.gained { box-shadow: inset 0 0 0 2px var(--rs-green), inset 0 0 8px rgba(0,0,0,0.5); }
-  .skill-cell .gain-badge {
-    position: absolute; top: -4px; right: -2px;
+  .stat-overlay .slevel {
+    display: block;
+    font-size: clamp(9px, 2.6cqw, 13px);
+    font-weight: bold;
+    color: var(--rs-gold);
+    text-shadow: 1px 1px 0 #000;
+  }
+  .stat-overlay .sfrac {
+    display: block;
+    font-size: clamp(7px, 2cqw, 10px);
+    color: var(--rs-gold);
+    text-shadow: 1px 1px 0 #000;
+    opacity: 0.85;
+  }
+  .stat-overlay.gained .slevel { color: var(--rs-green); }
+  .stat-overlay .gain-badge {
+    position: absolute; top: -10px; right: -8px;
     background: #14110c; color: var(--rs-green);
-    font-size: 0.55rem; font-weight: bold;
-    padding: 1px 4px; border: 1px solid var(--rs-green); border-radius: 2px;
-    z-index: 3;
+    font-size: 8px; font-weight: bold;
+    padding: 1px 3px; border: 1px solid var(--rs-green); border-radius: 2px;
+    white-space: nowrap; z-index: 3;
   }
-
-  .total-row {
-    grid-column: span 3;
-    background: #000;
-    margin: 4px 2px 2px;
-    border: 2px solid #3a352e;
-    border-radius: 4px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 10px; font-size: 0.85rem; gap: 2px;
+  .total-overlay {
+    position: absolute;
+    left: 50%; top: 94.4%; transform: translate(-50%, -50%);
+    text-align: center; line-height: 1.2;
   }
-  .total-row .tlabel { color: var(--rs-gold); font-size: 0.75rem; }
-  .total-row .tv { color: var(--rs-gold); font-weight: bold; font-size: 1.1rem; text-shadow: 1px 1px 0 #000; }
-  .total-row .tg { color: var(--rs-green); font-weight: bold; font-size: 0.75rem; }
+  .total-overlay .tv { color: var(--rs-gold); font-weight: bold; font-size: clamp(10px, 3cqw, 15px); text-shadow: 1px 1px 0 #000; }
+  .total-overlay .tg { display: block; color: var(--rs-green); font-size: clamp(7px, 2cqw, 10px); }
 
   .section-label {
     color: var(--rs-gold-dim); font-size: 0.72rem; text-transform: uppercase;
@@ -225,6 +231,20 @@
       return html;
     }
 
+    // Coordinates measured directly from assets/skills/Skills_panel.png (204x275)
+    const ROW_Y = [8.0, 19.3, 30.2, 41.1, 52.0, 62.9, 73.8, 84.7];
+    const COL_X = [22.4, 53.8, 85.1];
+    const GRID_SKILLS = [
+      ["Attack", "Hitpoints", "Mining"],
+      ["Strength", "Agility", "Smithing"],
+      ["Defence", "Herblore", "Fishing"],
+      ["Ranged", "Thieving", "Cooking"],
+      ["Prayer", "Crafting", "Firemaking"],
+      ["Magic", "Fletching", "Woodcutting"],
+      ["Runecrafting", "Slayer", "Farming"],
+      ["Construction", "Hunter", "Sailing"]
+    ];
+
     function renderColumn(player, history) {
       const col = document.createElement("div");
       col.className = "player-col";
@@ -242,28 +262,34 @@
         return col;
       }
 
-      const grid = document.createElement("div");
-      grid.className = "skill-grid";
-      SKILL_ORDER.forEach(skill => {
-        const data = player.stats[skill] || { level: 1, xp: 0, rank: -1 };
-        const gain = (player.gains && player.gains[skill]) || 0;
-        const cell = document.createElement("div");
-        cell.className = "skill-cell" + (gain > 0 ? " gained" : "");
-        cell.innerHTML =
-          skillIcon(skill) +
-          '<div class="stext"><span class="slevel">' + data.level + '</span><span class="sfrac">/ ' + data.level + '</span></div>' +
-          (gain > 0 ? '<span class="gain-badge">+' + fmt(gain) + '</span>' : "") +
-          '<div class="tooltip">' + buildTooltip(skill, data, gain, history && history.history) + '</div>';
-        grid.appendChild(cell);
+      const panel = document.createElement("div");
+      panel.className = "panel-wrap";
+
+      GRID_SKILLS.forEach((rowSkills, r) => {
+        rowSkills.forEach((skill, c) => {
+          const data = player.stats[skill] || { level: 1, xp: 0, rank: -1 };
+          const gain = (player.gains && player.gains[skill]) || 0;
+          const overlay = document.createElement("div");
+          overlay.className = "stat-overlay" + (gain > 0 ? " gained" : "");
+          overlay.style.left = COL_X[c] + "%";
+          overlay.style.top = ROW_Y[r] + "%";
+          overlay.innerHTML =
+            '<span class="slevel">' + data.level + '</span>' +
+            '<span class="sfrac">/ ' + data.level + '</span>' +
+            (gain > 0 ? '<span class="gain-badge">+' + fmt(gain) + '</span>' : "") +
+            '<div class="tooltip">' + buildTooltip(skill, data, gain, history && history.history) + '</div>';
+          panel.appendChild(overlay);
+        });
       });
-      const totalRow = document.createElement("div");
-      totalRow.className = "total-row";
-      totalRow.innerHTML =
-        '<span class="tlabel">Total level:</span>' +
+
+      const totalOverlay = document.createElement("div");
+      totalOverlay.className = "total-overlay";
+      totalOverlay.innerHTML =
         '<span class="tv">' + player.totalLevel + '</span>' +
         (player.totalGain > 0 ? '<span class="tg">+' + fmt(player.totalGain) + ' xp</span>' : '');
-      grid.appendChild(totalRow);
-      col.appendChild(grid);
+      panel.appendChild(totalOverlay);
+
+      col.appendChild(panel);
 
       const feedLabel = document.createElement("div");
       feedLabel.className = "section-label";
