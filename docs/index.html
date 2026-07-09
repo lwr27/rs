@@ -15,7 +15,7 @@
     --rs-cell-dark: #241f18;
     --rs-border-light: #8a7859;
     --rs-border-dark: #100d09;
-    --rs-gold: #ffd700;
+    --rs-gold: #ffff00;
     --rs-gold-dim: #ff981f;
     --rs-text: #ffffff;
     --rs-text-dim: #c8b98f;
@@ -85,6 +85,7 @@
     background-size: 100% 100%;
     background-repeat: no-repeat;
     image-rendering: pixelated;
+    container-type: inline-size;
   }
   .stat-overlay {
     position: absolute;
@@ -96,17 +97,19 @@
   }
   .stat-overlay .slevel {
     display: block;
-    font-size: clamp(9px, 2.6cqw, 13px);
+    font-size: clamp(11px, 3.4cqw, 17px);
     font-weight: bold;
+    font-family: 'Trebuchet MS', Verdana, sans-serif;
     color: var(--rs-gold);
-    text-shadow: 1px 1px 0 #000;
+    text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
   }
   .stat-overlay .sfrac {
     display: block;
-    font-size: clamp(7px, 2cqw, 10px);
+    font-size: clamp(9px, 2.7cqw, 13px);
+    font-weight: bold;
     color: var(--rs-gold);
-    text-shadow: 1px 1px 0 #000;
-    opacity: 0.85;
+    text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
+    opacity: 0.9;
   }
   .stat-overlay.gained .slevel { color: var(--rs-green); }
   .stat-overlay .gain-badge {
@@ -121,7 +124,7 @@
     left: 50%; top: 94.4%; transform: translate(-50%, -50%);
     text-align: center; line-height: 1.2;
   }
-  .total-overlay .tv { color: var(--rs-gold); font-weight: bold; font-size: clamp(10px, 3cqw, 15px); text-shadow: 1px 1px 0 #000; }
+  .total-overlay .tv { color: var(--rs-gold); font-weight: bold; font-size: clamp(12px, 3.8cqw, 18px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
   .total-overlay .tg { display: block; color: var(--rs-green); font-size: clamp(7px, 2cqw, 10px); }
 
   .section-label {
