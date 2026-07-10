@@ -149,7 +149,58 @@
   .tooltip .th { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; padding-bottom: 2px; }
   .tile:hover .tooltip { display: block; }
 
-  .error { color: #e5484d; text-align: center; padding: 1rem; font-size: 0.85rem; }
+  .tabs {
+    display: flex; gap: 6px; max-width: 1900px; margin: 0 auto 12px;
+  }
+  .tab-btn {
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--text-dim);
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    padding: 8px 18px; border-radius: 6px; cursor: pointer;
+  }
+  .tab-btn.active { color: var(--text); border-color: var(--accent); background: var(--cell); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .rivals-wrap { max-width: 900px; margin: 0 auto; }
+  .rivals-pickers {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    margin-bottom: 16px;
+  }
+  .rivals-pickers select {
+    background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 5px; padding: 7px 10px; font-family: inherit; font-size: 0.9rem;
+  }
+  .rivals-vs { color: var(--text-faint); font-weight: 700; font-size: 0.9rem; }
+
+  .rivals-summary {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 14px; margin-bottom: 16px;
+  }
+  .rivals-summary .rs-name { font-weight: 700; font-size: 1rem; }
+  .rivals-summary .rs-a { text-align: right; color: var(--text); }
+  .rivals-summary .rs-b { text-align: left; color: var(--text); }
+  .rivals-summary .rs-mid { text-align: center; color: var(--text-faint); font-size: 0.7rem; text-transform: uppercase; }
+  .rivals-summary .rs-xp { font-size: 1.4rem; font-weight: 800; }
+  .lead-bar { grid-column: 1 / -1; height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: var(--cell); }
+  .lead-bar .seg-a { background: #ff9f43; }
+  .lead-bar .seg-b { background: #4f8ef0; }
+
+  .rivals-table { display: flex; flex-direction: column; gap: 3px; }
+  .riv-row {
+    display: grid; grid-template-columns: 1fr auto 90px auto 1fr; align-items: center; gap: 10px;
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 4px;
+    padding: 6px 12px; font-size: 0.8rem;
+  }
+  .riv-row .rv-a, .riv-row .rv-b { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .riv-row .rv-a { text-align: right; }
+  .riv-row .rv-b { text-align: left; }
+  .riv-row .rv-skill { text-align: center; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; }
+  .riv-row .rv-diff { text-align: center; font-size: 0.68rem; color: var(--text-faint); }
+  .rv-win { color: #ffd24f; }
+  .rv-lose { color: var(--text-dim); }
+  .rv-tie { color: var(--text-dim); }
+
 
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
@@ -162,7 +213,25 @@
     <span class="updated" id="updated">Loading...</span>
   </header>
 
-  <div class="board" id="board"></div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="skills">Skills</button>
+    <button class="tab-btn" data-tab="rivals">Rivals</button>
+  </div>
+
+  <div class="tab-panel active" id="panel-skills">
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-rivals">
+    <div class="rivals-wrap">
+      <div class="rivals-pickers">
+        <select id="rivalA"></select>
+        <span class="rivals-vs">VS</span>
+        <select id="rivalB"></select>
+      </div>
+      <div id="rivalsContent"></div>
+    </div>
+  </div>
 
   <script>
     // Tile-interior edges measured from the actual Skills_panel.png (pixel
@@ -350,6 +419,88 @@
       return col;
     }
 
+    // Flattened skill order for the Rivals comparison table
+    const ALL_SKILLS = GRID_SKILLS.flat();
+
+    function totalXp(player) {
+      return (player.stats && player.stats.Overall) ? player.stats.Overall.xp : 0;
+    }
+
+    function renderRivals(players) {
+      const selA = document.getElementById("rivalA");
+      const selB = document.getElementById("rivalB");
+      const content = document.getElementById("rivalsContent");
+
+      if (!selA.options.length) {
+        players.forEach((p, i) => {
+          const oA = document.createElement("option");
+          oA.value = i; oA.textContent = p.username;
+          selA.appendChild(oA);
+          const oB = document.createElement("option");
+          oB.value = i; oB.textContent = p.username;
+          selB.appendChild(oB);
+        });
+        selA.value = 0;
+        selB.value = players.length > 1 ? 1 : 0;
+        selA.addEventListener("change", update);
+        selB.addEventListener("change", update);
+      }
+
+      function update() {
+        const a = players[parseInt(selA.value, 10)];
+        const b = players[parseInt(selB.value, 10)];
+        if (!a || !b) { content.innerHTML = ""; return; }
+
+        const xpA = totalXp(a), xpB = totalXp(b);
+        const xpSum = xpA + xpB || 1;
+        const pctA = Math.round((xpA / xpSum) * 100);
+
+        let html = '<div class="rivals-summary">' +
+          '<div class="rs-a"><div class="rs-name">' + a.username + '</div><div class="rs-xp">' + fmt(xpA) + '</div><div class="rs-mid" style="text-align:right">Total lvl ' + a.totalLevel + '</div></div>' +
+          '<div class="rs-mid">TOTAL XP</div>' +
+          '<div class="rs-b"><div class="rs-name">' + b.username + '</div><div class="rs-xp">' + fmt(xpB) + '</div><div class="rs-mid" style="text-align:left">Total lvl ' + b.totalLevel + '</div></div>' +
+          '<div class="lead-bar"><div class="seg-a" style="width:' + pctA + '%"></div><div class="seg-b" style="width:' + (100 - pctA) + '%"></div></div>' +
+          '</div><div class="rivals-table">';
+
+        let winsA = 0, winsB = 0;
+        ALL_SKILLS.forEach(skill => {
+          const da = a.stats[skill] || { level: 1, xp: 0 };
+          const db = b.stats[skill] || { level: 1, xp: 0 };
+          let cls;
+          if (da.xp > db.xp) { cls = ["rv-win", "rv-lose"]; winsA++; }
+          else if (db.xp > da.xp) { cls = ["rv-lose", "rv-win"]; winsB++; }
+          else cls = ["rv-tie", "rv-tie"];
+          const diff = Math.abs(da.xp - db.xp);
+          html += '<div class="riv-row">' +
+            '<span class="rv-a ' + cls[0] + '">' + da.level + '</span>' +
+            '<span class="rv-skill">' + skill + '</span>' +
+            '<span class="rv-diff">' + (diff > 0 ? fmt(diff) + ' xp' : '—') + '</span>' +
+            '<span class="rv-skill"></span>' +
+            '<span class="rv-b ' + cls[1] + '">' + db.level + '</span>' +
+            '</div>';
+        });
+        html += '</div>';
+
+        content.innerHTML =
+          '<div class="section-label" style="text-align:center;border:none;margin-bottom:8px">' +
+          a.username + ' leads ' + winsA + ' skills · ' + b.username + ' leads ' + winsB + ' skills' +
+          '</div>' + html;
+      }
+
+      update();
+    }
+
+    function initTabs() {
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+        });
+      });
+    }
+
     async function init() {
       let data;
       try {
@@ -370,6 +521,9 @@
       data.players.forEach((player, i) => {
         board.appendChild(renderColumn(player, histories[i]));
       });
+
+      initTabs();
+      renderRivals(data.players);
     }
 
     init();
