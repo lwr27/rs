@@ -161,46 +161,31 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  .rivals-wrap { max-width: 900px; margin: 0 auto; }
-  .rivals-pickers {
-    display: flex; align-items: center; justify-content: center; gap: 14px;
-    margin-bottom: 16px;
+  .luck-wrap { max-width: 980px; margin: 0 auto; }
+  .luck-hero {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+    padding: 22px 24px; margin-bottom: 20px; text-align: center;
   }
-  .rivals-pickers select {
-    background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
-    border-radius: 5px; padding: 7px 10px; font-family: inherit; font-size: 0.9rem;
+  .luck-hero h2 { margin: 0 0 4px; font-size: 1.1rem; color: var(--text); }
+  .luck-hero .lh-sub { color: var(--text-faint); font-size: 0.8rem; margin-bottom: 16px; }
+  .luck-stats { display: flex; justify-content: center; gap: 36px; flex-wrap: wrap; }
+  .luck-stat { min-width: 120px; }
+  .luck-stat .ls-num { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .luck-stat .ls-label { color: var(--text-faint); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+  .luck-stat.hot .ls-num { color: #ff6b6b; }
+  .luck-stat.mid .ls-num { color: #ffd24f; }
+  .luck-note {
+    color: var(--text-dim); font-size: 0.78rem; max-width: 640px; margin: 16px auto 0; line-height: 1.5;
   }
-  .rivals-vs { color: var(--text-faint); font-weight: 700; font-size: 0.9rem; }
-
-  .rivals-summary {
-    display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center;
-    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
-    padding: 14px; margin-bottom: 16px;
+  .luck-chart-wrap {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 16px;
   }
-  .rivals-summary .rs-name { font-weight: 700; font-size: 1rem; }
-  .rivals-summary .rs-a { text-align: right; color: var(--text); }
-  .rivals-summary .rs-b { text-align: left; color: var(--text); }
-  .rivals-summary .rs-mid { text-align: center; color: var(--text-faint); font-size: 0.7rem; text-transform: uppercase; }
-  .rivals-summary .rs-xp { font-size: 1.4rem; font-weight: 800; }
-  .lead-bar { grid-column: 1 / -1; height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: var(--cell); }
-  .lead-bar .seg-a { background: #ff9f43; }
-  .lead-bar .seg-b { background: #4f8ef0; }
-
-  .rivals-table { display: flex; flex-direction: column; gap: 3px; }
-  .riv-row {
-    display: grid; grid-template-columns: 1fr auto 90px auto 1fr; align-items: center; gap: 10px;
-    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 4px;
-    padding: 6px 12px; font-size: 0.8rem;
-  }
-  .riv-row .rv-a, .riv-row .rv-b { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .riv-row .rv-a { text-align: right; }
-  .riv-row .rv-b { text-align: left; }
-  .riv-row .rv-skill { text-align: center; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; }
-  .riv-row .rv-diff { text-align: center; font-size: 0.68rem; color: var(--text-faint); }
-  .rv-win { color: #ffd24f; }
-  .rv-lose { color: var(--text-dim); }
-  .rv-tie { color: var(--text-dim); }
-
+  .luck-chart-wrap h3 { margin: 0 0 4px; font-size: 0.95rem; color: var(--text); }
+  .luck-chart-wrap .lc-sub { color: var(--text-faint); font-size: 0.75rem; margin-bottom: 12px; }
+  .luck-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 12px; font-size: 0.68rem; color: var(--text-dim); }
+  .luck-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .luck-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
@@ -208,6 +193,7 @@
 </style>
 </head>
 <body>
+
   <header>
     <h1>OSRS XP tracker</h1>
     <span class="updated" id="updated">Loading...</span>
@@ -215,22 +201,15 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="skills">Skills</button>
-    <button class="tab-btn" data-tab="rivals">Rivals</button>
+    <button class="tab-btn" data-tab="luck">Corrupted Gauntlet</button>
   </div>
 
   <div class="tab-panel active" id="panel-skills">
     <div class="board" id="board"></div>
   </div>
 
-  <div class="tab-panel" id="panel-rivals">
-    <div class="rivals-wrap">
-      <div class="rivals-pickers">
-        <select id="rivalA"></select>
-        <span class="rivals-vs">VS</span>
-        <select id="rivalB"></select>
-      </div>
-      <div id="rivalsContent"></div>
-    </div>
+  <div class="tab-panel" id="panel-luck">
+    <div id="luckContent"></div>
   </div>
 
   <script>
@@ -419,75 +398,116 @@
       return col;
     }
 
-    // Flattened skill order for the Rivals comparison table
-    const ALL_SKILLS = GRID_SKILLS.flat();
+    function renderGauntletLuck(players) {
+      const content = document.getElementById("luckContent");
+      const player = players.find(p => p.username === "5JV") || players[0];
+      if (!player) { content.innerHTML = ""; return; }
 
-    function totalXp(player) {
-      return (player.stats && player.stats.Overall) ? player.stats.Overall.xp : 0;
-    }
+      const DROP_RATE = 1 / 400;
+      const clears = (player.activities && player.activities["The Corrupted Gauntlet"])
+        ? player.activities["The Corrupted Gauntlet"].score : 0;
 
-    function renderRivals(players) {
-      const selA = document.getElementById("rivalA");
-      const selB = document.getElementById("rivalB");
-      const content = document.getElementById("rivalsContent");
+      const survivalProb = Math.pow(1 - DROP_RATE, clears); // chance of STILL being dry
+      const luckPct = survivalProb * 100;
+      const expected = Math.round(1 / DROP_RATE);
+      const overExpected = (clears / expected);
 
-      if (!selA.options.length) {
-        players.forEach((p, i) => {
-          const oA = document.createElement("option");
-          oA.value = i; oA.textContent = p.username;
-          selA.appendChild(oA);
-          const oB = document.createElement("option");
-          oB.value = i; oB.textContent = p.username;
-          selB.appendChild(oB);
-        });
-        selA.value = 0;
-        selB.value = players.length > 1 ? 1 : 0;
-        selA.addEventListener("change", update);
-        selB.addEventListener("change", update);
+      // Real-world reference probabilities to compare the dry streak against,
+      // ordered rarest-to-common isn't needed; sorted common -> rare for the chart.
+      const REFS = [
+        { label: "Flipping 5 heads in a row", p: 1 / 32, color: "#7bd88f" },
+        { label: "Rolling snake eyes twice in a row", p: 1 / 1296, color: "#4f8ef0" },
+        { label: "Struck by lightning (lifetime odds)", p: 1 / 15300, color: "#ffd24f" },
+        { label: "Dealt a royal flush in poker", p: 1 / 649740, color: "#ff9f43" },
+        { label: "Winning the Powerball jackpot", p: 1 / 292201338, color: "#ff6b6b" },
+      ];
+      const lnKeep = Math.log(1 - DROP_RATE);
+      REFS.forEach(r => { r.n = Math.log(r.p) / lnKeep; });
+
+      const xMax = Math.max(clears * 1.15, REFS[REFS.length - 1].n * 1.08);
+      const minProb = REFS[REFS.length - 1].p / 4;
+
+      const W = 900, H = 460, ML = 92, MR = 24, MT = 20, MB = 46;
+      const plotW = W - ML - MR, plotH = H - MT - MB;
+      const xPix = n => ML + (n / xMax) * plotW;
+      const yPix = p => {
+        const clamped = Math.max(p, minProb);
+        return MT + (0 - Math.log10(clamped)) / (0 - Math.log10(minProb)) * plotH;
+      };
+
+      // Dry-streak survival curve
+      let d = "";
+      const steps = 240;
+      for (let i = 0; i <= steps; i++) {
+        const n = (xMax / steps) * i;
+        const p = Math.pow(1 - DROP_RATE, n);
+        const x = xPix(n), y = yPix(p);
+        d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1) + " ";
       }
 
-      function update() {
-        const a = players[parseInt(selA.value, 10)];
-        const b = players[parseInt(selB.value, 10)];
-        if (!a || !b) { content.innerHTML = ""; return; }
+      let refLines = "";
+      let refLabels = "";
+      REFS.forEach(r => {
+        const y = yPix(r.p);
+        refLines += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) +
+          '" stroke="' + r.color + '" stroke-width="1" stroke-dasharray="4,4" opacity="0.55"/>';
+        refLabels += '<text x="' + (W - MR - 6) + '" y="' + (y - 5).toFixed(1) +
+          '" text-anchor="end" font-size="12" fill="' + r.color + '">' + r.label +
+          ' (1 in ' + fmt(Math.round(1 / r.p)) + ') — ~' + fmt(Math.round(r.n)) + ' clears</text>';
+      });
 
-        const xpA = totalXp(a), xpB = totalXp(b);
-        const xpSum = xpA + xpB || 1;
-        const pctA = Math.round((xpA / xpSum) * 100);
+      // Y axis gridlines at nice percentages
+      const yTicks = [1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001];
+      let yAxis = "";
+      yTicks.forEach(t => {
+        if (t < minProb) return;
+        const y = yPix(t);
+        const label = t >= 1 ? "100%" : (t * 100).toLocaleString(undefined, { maximumSignificantDigits: 2 }) + "%";
+        yAxis += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) + '" stroke="var(--panel-border)" stroke-width="1"/>';
+        yAxis += '<text x="' + (ML - 10) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" font-size="11" fill="var(--text-faint)">' + label + '</text>';
+      });
 
-        let html = '<div class="rivals-summary">' +
-          '<div class="rs-a"><div class="rs-name">' + a.username + '</div><div class="rs-xp">' + fmt(xpA) + '</div><div class="rs-mid" style="text-align:right">Total lvl ' + a.totalLevel + '</div></div>' +
-          '<div class="rs-mid">TOTAL XP</div>' +
-          '<div class="rs-b"><div class="rs-name">' + b.username + '</div><div class="rs-xp">' + fmt(xpB) + '</div><div class="rs-mid" style="text-align:left">Total lvl ' + b.totalLevel + '</div></div>' +
-          '<div class="lead-bar"><div class="seg-a" style="width:' + pctA + '%"></div><div class="seg-b" style="width:' + (100 - pctA) + '%"></div></div>' +
-          '</div><div class="rivals-table">';
-
-        let winsA = 0, winsB = 0;
-        ALL_SKILLS.forEach(skill => {
-          const da = a.stats[skill] || { level: 1, xp: 0 };
-          const db = b.stats[skill] || { level: 1, xp: 0 };
-          let cls;
-          if (da.xp > db.xp) { cls = ["rv-win", "rv-lose"]; winsA++; }
-          else if (db.xp > da.xp) { cls = ["rv-lose", "rv-win"]; winsB++; }
-          else cls = ["rv-tie", "rv-tie"];
-          const diff = Math.abs(da.xp - db.xp);
-          html += '<div class="riv-row">' +
-            '<span class="rv-a ' + cls[0] + '">' + da.level + '</span>' +
-            '<span class="rv-skill">' + skill + '</span>' +
-            '<span class="rv-diff">' + (diff > 0 ? fmt(diff) + ' xp' : '—') + '</span>' +
-            '<span class="rv-skill"></span>' +
-            '<span class="rv-b ' + cls[1] + '">' + db.level + '</span>' +
-            '</div>';
-        });
-        html += '</div>';
-
-        content.innerHTML =
-          '<div class="section-label" style="text-align:center;border:none;margin-bottom:8px">' +
-          a.username + ' leads ' + winsA + ' skills · ' + b.username + ' leads ' + winsB + ' skills' +
-          '</div>' + html;
+      // X axis ticks
+      const xTickCount = 6;
+      let xAxis = "";
+      for (let i = 0; i <= xTickCount; i++) {
+        const n = (xMax / xTickCount) * i;
+        const x = xPix(n);
+        xAxis += '<text x="' + x.toFixed(1) + '" y="' + (H - MB + 20) + '" text-anchor="middle" font-size="11" fill="var(--text-faint)">' + fmt(Math.round(n)) + '</text>';
       }
 
-      update();
+      const curX = xPix(clears), curY = yPix(Math.max(survivalProb, minProb));
+
+      const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' +
+        yAxis + xAxis + refLines +
+        '<path d="' + d + '" fill="none" stroke="#4f8ef0" stroke-width="2.5"/>' +
+        '<line x1="' + curX.toFixed(1) + '" y1="' + MT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - MB) + '" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3,3"/>' +
+        '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
+        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' clears</text>' +
+        refLabels +
+        '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Corrupted Gauntlet clears →</text>' +
+        '</svg>';
+
+      content.innerHTML =
+        '<div class="luck-wrap">' +
+        '<div class="luck-hero">' +
+        '<h2>5JV\'s Corrupted Gauntlet drought</h2>' +
+        '<div class="lh-sub">Chasing a 1-in-400 unique. No drop yet.</div>' +
+        '<div class="luck-stats">' +
+        '<div class="luck-stat"><div class="ls-num">' + fmt(clears) + '</div><div class="ls-label">Clears</div></div>' +
+        '<div class="luck-stat hot"><div class="ls-num">' + luckPct.toFixed(1) + '%</div><div class="ls-label">Still-dry probability</div></div>' +
+        '<div class="luck-stat mid"><div class="ls-num">' + overExpected.toFixed(2) + '×</div><div class="ls-label">Past expected (' + fmt(expected) + ')</div></div>' +
+        '</div>' +
+        '<div class="luck-note">"Still-dry probability" is the chance, going in, of doing ' + fmt(clears) +
+        ' Corrupted Gauntlet clears at a 1/400 drop rate and getting <em>nothing</em>. At ' + luckPct.toFixed(1) +
+        '%, roughly ' + Math.round(luckPct) + ' out of every 100 players attempting this many clears would still be waiting — everyone else would\'ve already got it.</div>' +
+        '</div>' +
+        '<div class="luck-chart-wrap">' +
+        '<h3>How rare is this drought, really?</h3>' +
+        '<div class="lc-sub">The blue line is the probability of still not having the drop after N clears. Dashed lines mark real-world odds for comparison — where the blue line crosses one, that\'s how many clears it\'d take for the drought itself to be that rare.</div>' +
+        svg +
+        '</div>' +
+        '</div>';
     }
 
     function initTabs() {
@@ -523,7 +543,7 @@
       });
 
       initTabs();
-      renderRivals(data.players);
+      renderGauntletLuck(data.players);
     }
 
     init();
