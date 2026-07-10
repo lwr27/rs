@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OSRS XP Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-border: #262d38;
+    --cell: #1c2330;
+    --accent: #4f8ef0;
+    --accent-dim: #2c5aa8;
+    --text: #e6edf3;
+    --text-dim: #8b98a9;
+    --text-faint: #5c6674;
+    --bar-track: #2a3241;
+    --scroll: #3a4658;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Trebuchet MS', Verdana, sans-serif;
+    background: var(--bg);
+    color: var(--text-dim);
+    min-height: 100vh;
+    padding: 12px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+  }
+  header h1 { color: var(--text); font-size: 1.3rem; font-weight: 600; }
+  header .updated { color: var(--text-faint); font-size: 0.8rem; }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    max-width: 1900px;
+    margin: 0 auto;
+  }
+
+  .player-col {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .player-name {
+    text-align: center;
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 4px;
+  }
+
+  .panel-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+    aspect-ratio: 1081 / 1455;
+    background-image: url('assets/skills/Skills_panel.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    container-type: inline-size;
+  }
+  .tile {
+    position: absolute;
+    cursor: default;
+  }
+  .tile .slevel {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    line-height: 1;
+    font-size: clamp(10px, 3.7cqw, 18px);
+    font-weight: bold;
+    color: #ffff00;
+    text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
+  }
+  .tile .num-top { left: 60.0%; top: 21.6%; }
+  .tile .num-bot { left: 79.0%; top: 59.1%; }
+  .tile .xp-bar {
+    position: absolute;
+    left: 4.8%;
+    top: 93.75%;
+    transform: translateY(-50%);
+    height: max(2px, 6.25%);
+  }
+  .total-overlay {
+    position: absolute;
+    left: 60.2%; top: 93.6%; transform: translateY(-50%);
+    line-height: 1;
+  }
+  .total-overlay .tv { color: #ffff00; font-weight: bold; font-size: clamp(10px, 3cqw, 15px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
+
+  .section-label {
+    color: var(--text-faint); font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 3px 6px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .kc-list { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+  .kc-list::-webkit-scrollbar { width: 8px; }
+  .kc-list::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 2px; }
+  .kc-list::-webkit-scrollbar-track { background: var(--cell); }
+  .kc-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 3px;
+    padding: 3px 8px; font-size: 0.7rem;
+  }
+  .kc-name { color: var(--text-dim); }
+  .kc-score { color: var(--accent); font-weight: bold; }
+
+  .session-log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+  .session-log::-webkit-scrollbar { width: 8px; }
+  .session-log::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 2px; }
+  .session-log::-webkit-scrollbar-track { background: var(--cell); }
+  .session-item {
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 4px;
+    padding: 6px 8px; font-size: 0.72rem;
+  }
+  .session-item .srow { display: flex; justify-content: space-between; align-items: center; }
+  .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
+  .session-item .stotal { color: var(--accent); font-weight: bold; }
+  .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
+  .session-empty { color: var(--text-faint); font-size: 0.72rem; text-align: center; padding: 12px; }
+
+  .tooltip {
+    display: none; position: absolute; z-index: 20;
+    bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
+    background: #05070a; border: 1px solid var(--panel-border); color: var(--text);
+    font-size: 0.68rem; padding: 6px 8px; white-space: nowrap; border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6); min-width: 130px;
+  }
+  .tooltip .tr { display: flex; justify-content: space-between; gap: 14px; }
+  .tooltip .tr + .tr { margin-top: 2px; }
+  .tooltip .th { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; padding-bottom: 2px; }
+  .tile:hover .tooltip { display: block; }
+
+  .tabs {
+    display: flex; gap: 6px; max-width: 1900px; margin: 0 auto 12px;
+  }
+  .tab-btn {
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--text-dim);
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    padding: 8px 18px; border-radius: 6px; cursor: pointer;
+  }
+  .tab-btn.active { color: var(--text); border-color: var(--accent); background: var(--cell); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .luck-wrap { max-width: 980px; margin: 0 auto; }
+  .luck-hero {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+    padding: 22px 24px; margin-bottom: 20px; text-align: center;
+  }
+  .luck-hero h2 { margin: 0 0 4px; font-size: 1.1rem; color: var(--text); }
+  .luck-hero .lh-sub { color: var(--text-faint); font-size: 0.8rem; margin-bottom: 16px; }
+  .luck-stats { display: flex; justify-content: center; gap: 36px; flex-wrap: wrap; }
+  .luck-stat { min-width: 120px; }
+  .luck-stat .ls-num { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .luck-stat .ls-label { color: var(--text-faint); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+  .luck-stat.hot .ls-num { color: #ff6b6b; }
+  .luck-stat.mid .ls-num { color: #ffd24f; }
+  .luck-note {
+    color: var(--text-dim); font-size: 0.78rem; max-width: 640px; margin: 16px auto 0; line-height: 1.5;
+  }
+  .luck-chart-wrap {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .luck-chart-wrap h3 { margin: 0 0 4px; font-size: 0.95rem; color: var(--text); }
+  .luck-chart-wrap .lc-sub { color: var(--text-faint); font-size: 0.75rem; margin-bottom: 12px; }
+  .luck-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 12px; font-size: 0.68rem; color: var(--text-dim); }
+  .luck-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .luck-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  @media (max-width: 1100px) {
+    .board { grid-template-columns: 1fr; max-width: 600px; }
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1>OSRS XP tracker</h1>
+    <span class="updated" id="updated">Loading...</span>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="skills">Skills</button>
+    <button class="tab-btn" data-tab="luck">Corrupted Gauntlet</button>
+  </div>
+
+  <div class="tab-panel active" id="panel-skills">
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-luck">
+    <div id="luckContent"></div>
+  </div>
+
+  <script>
+    // Tile-interior edges measured from the actual Skills_panel.png (pixel
+    // profiling of the separator dark-gap/bevel structure at 864x1164), as %
+    // of panel width/height. Each edge is the "rise point" where the tile
+    // interior begins after the dark separator gap - matching how positions
+    // were measured from a real game screenshot. The grid is NOT uniform.
+    const COL_EDGES = [4.51, 34.84, 65.51, 96.30];
+    const ROW_EDGES = [3.18, 14.26, 25.09, 36.00, 46.91, 57.82, 68.81, 79.73, 90.38];
+    // Bar geometry measured from a real game screenshot (skill progress bars
+    // plugin): inset 4.8% from tile edge, max width 84.1% of tile, hue 0-120.
+    const BAR_MAX_W = 84.1;
+    const GRID_SKILLS = [
+      ["Attack", "Hitpoints", "Mining"],
+      ["Strength", "Agility", "Smithing"],
+      ["Defence", "Herblore", "Fishing"],
+      ["Ranged", "Thieving", "Cooking"],
+      ["Prayer", "Crafting", "Firemaking"],
+      ["Magic", "Fletching", "Woodcutting"],
+      ["Runecrafting", "Slayer", "Farming"],
+      ["Construction", "Hunter", "Sailing"]
+    ];
+    const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const fmt = n => n.toLocaleString();
+    function timeAgo(iso) {
+      const diff = Date.now() - new Date(iso).getTime();
+      const m = Math.round(diff / 60000);
+      if (m < 60) return m + "m ago";
+      const h = Math.round(m / 60);
+      if (h < 24) return h + "h ago";
+      return Math.round(h / 24) + "d ago";
+    }
+
+    // Standard OSRS xp-for-level table (levels 1-99)
+    const XP_TABLE = (() => {
+      const table = [0, 0];
+      let total = 0;
+      for (let lvl = 1; lvl < 99; lvl++) {
+        total += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
+        table.push(Math.floor(total / 4));
+      }
+      return table; // XP_TABLE[level] = xp required to reach that level
+    })();
+    function progressToNextLevel(level, xp) {
+      if (level >= 99) return 1;
+      const cur = XP_TABLE[level] || 0;
+      const next = XP_TABLE[level + 1] || cur + 1;
+      return Math.max(0, Math.min(1, (xp - cur) / (next - cur)));
+    }
+
+    async function loadHistory(username) {
+      const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      try {
+        const res = await fetch("data/snapshots/" + safe + ".json");
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    function buildTooltip(skill, data) {
+      const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
+      const pct = Math.round(progressToNextLevel(data.level, data.xp) * 100);
+      return '<div class="th">' + skill + '</div>' +
+        '<div class="tr"><span>Level</span><span>' + data.level + '</span></div>' +
+        '<div class="tr"><span>XP</span><span>' + fmt(data.xp) + '</span></div>' +
+        '<div class="tr"><span>Rank</span><span>' + rankText + '</span></div>' +
+        '<div class="tr"><span>Next level</span><span>' + pct + '%</span></div>';
+    }
+
+    function renderColumn(player, history) {
+      const col = document.createElement("div");
+      col.className = "player-col";
+
+      const name = document.createElement("div");
+      name.className = "player-name";
+      name.textContent = player.username;
+      col.appendChild(name);
+
+      if (player.error) {
+        const err = document.createElement("div");
+        err.className = "error";
+        err.textContent = player.error;
+        col.appendChild(err);
+        return col;
+      }
+
+      const panel = document.createElement("div");
+      panel.className = "panel-wrap";
+
+      GRID_SKILLS.forEach((rowSkills, r) => {
+        rowSkills.forEach((skill, c) => {
+          const data = player.stats[skill] || { level: 1, xp: 0, rank: -1 };
+          const prog = progressToNextLevel(data.level, data.xp);
+
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          tile.style.left = COL_EDGES[c] + "%";
+          tile.style.top = ROW_EDGES[r] + "%";
+          tile.style.width = (COL_EDGES[c + 1] - COL_EDGES[c]) + "%";
+          tile.style.height = (ROW_EDGES[r + 1] - ROW_EDGES[r]) + "%";
+
+          let barHtml = "";
+          if (data.level < 99) {
+            const hue = Math.round(prog * 120);
+            barHtml = '<div class="xp-bar" style="width:' + (prog * BAR_MAX_W).toFixed(1) +
+              '%; background: hsl(' + hue + ', 100%, 50%)"></div>';
+          }
+
+          tile.innerHTML =
+            '<span class="slevel num-top">' + data.level + '</span>' +
+            '<span class="slevel num-bot">' + data.level + '</span>' +
+            barHtml +
+            '<div class="tooltip">' + buildTooltip(skill, data) + '</div>';
+          panel.appendChild(tile);
+        });
+      });
+
+      const totalOverlay = document.createElement("div");
+      totalOverlay.className = "total-overlay";
+      totalOverlay.innerHTML = '<span class="tv">' + player.totalLevel + '</span>';
+      panel.appendChild(totalOverlay);
+
+      col.appendChild(panel);
+
+      // Boss / clue killcount panel
+      if (player.activities && Object.keys(player.activities).length) {
+        const kcLabel = document.createElement("div");
+        kcLabel.className = "section-label";
+        kcLabel.textContent = "Clues & bosses";
+        col.appendChild(kcLabel);
+
+        const kcList = document.createElement("div");
+        kcList.className = "kc-list";
+        Object.entries(player.activities)
+          .sort((a, b) => b[1].score - a[1].score)
+          .forEach(([name, data]) => {
+            const row = document.createElement("div");
+            row.className = "kc-row";
+            row.innerHTML =
+              '<span class="kc-name">' + name + '</span>' +
+              '<span class="kc-score">' + fmt(data.score) + '</span>';
+            kcList.appendChild(row);
+          });
+        col.appendChild(kcList);
+      }
+
+      const logLabel = document.createElement("div");
+      logLabel.className = "section-label";
+      logLabel.textContent = "Session log (7 days)";
+      col.appendChild(logLabel);
+
+      const log = document.createElement("div");
+      log.className = "session-log";
+      const cutoff = Date.now() - WINDOW_MS;
+      const sessions = (history && history.history ? history.history : [])
+        .filter(e => new Date(e.timestamp).getTime() >= cutoff &&
+          (e.totalGain > 0 || (e.activityGains && Object.keys(e.activityGains).length)))
+        .slice()
+        .reverse();
+
+      if (sessions.length) {
+        sessions.slice(0, 60).forEach(s => {
+          const item = document.createElement("div");
+          item.className = "session-item";
+          const breakdown = Object.entries(s.gains || {})
+            .filter(([sk, xp]) => sk !== "Overall" && xp > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([sk, xp]) => sk + " +" + fmt(xp))
+            .join(", ");
+          const activityBreakdown = Object.entries(s.activityGains || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, score]) => name + " +" + fmt(score))
+            .join(", ");
+          const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ");
+          item.innerHTML =
+            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(s.totalGain) + ' xp</span></div>' +
+            (fullBreakdown ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
+          log.appendChild(item);
+        });
+      } else {
+        log.innerHTML = '<div class="session-empty">No sessions recorded yet</div>';
+      }
+      col.appendChild(log);
+
+      return col;
+    }
+
+    function renderGauntletLuck(players) {
+      const content = document.getElementById("luckContent");
+      const player = players.find(p => p.username === "5JV") || players[0];
+      if (!player) { content.innerHTML = ""; return; }
+
+      const DROP_RATE = 1 / 400;
+      const clears = (player.activities && player.activities["The Corrupted Gauntlet"])
+        ? player.activities["The Corrupted Gauntlet"].score : 0;
+
+      const survivalProb = Math.pow(1 - DROP_RATE, clears); // chance of STILL being dry
+      const luckPct = survivalProb * 100;
+      const expected = Math.round(1 / DROP_RATE);
+      const overExpected = (clears / expected);
+
+      // Real-world (well, real-OSRS) reference drop rates to compare the
+      // dry streak against, sorted common -> rare.
+      const REFS = [
+        { label: "Barrows: unique piece from a specific brother", p: 1 / 17.4, color: "#7bd88f" },
+        { label: "Zulrah: any unique (fang/visage combined)", p: 1 / 128, color: "#4f8ef0" },
+        { label: "Zulrah: Tanzanite Fang specifically", p: 1 / 512, color: "#ff9f43" },
+      ];
+      const lnKeep = Math.log(1 - DROP_RATE);
+      REFS.forEach(r => { r.n = Math.log(r.p) / lnKeep; });
+
+      const xMax = 2500;
+      const minProb = Math.pow(1 - DROP_RATE, xMax) / 1.5;
+
+      const W = 900, H = 460, ML = 92, MR = 24, MT = 20, MB = 46;
+      const plotW = W - ML - MR, plotH = H - MT - MB;
+      const xPix = n => ML + (n / xMax) * plotW;
+      const yPix = p => {
+        const clamped = Math.max(p, minProb);
+        return MT + (0 - Math.log10(clamped)) / (0 - Math.log10(minProb)) * plotH;
+      };
+
+      // Dry-streak survival curve
+      let d = "";
+      const steps = 240;
+      for (let i = 0; i <= steps; i++) {
+        const n = (xMax / steps) * i;
+        const p = Math.pow(1 - DROP_RATE, n);
+        const x = xPix(n), y = yPix(p);
+        d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1) + " ";
+      }
+
+      let refLines = "";
+      let refLabels = "";
+      REFS.forEach(r => {
+        const y = yPix(r.p);
+        refLines += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) +
+          '" stroke="' + r.color + '" stroke-width="1" stroke-dasharray="4,4" opacity="0.55"/>';
+        refLabels += '<text x="' + (W - MR - 6) + '" y="' + (y - 5).toFixed(1) +
+          '" text-anchor="end" font-size="12" fill="' + r.color + '">' + r.label +
+          ' (1 in ' + fmt(Math.round(1 / r.p)) + ') — ~' + fmt(Math.round(r.n)) + ' clears</text>';
+      });
+
+      // Y axis gridlines at nice percentages
+      const yTicks = [1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001];
+      let yAxis = "";
+      yTicks.forEach(t => {
+        if (t < minProb) return;
+        const y = yPix(t);
+        const label = t >= 1 ? "100%" : (t * 100).toLocaleString(undefined, { maximumSignificantDigits: 2 }) + "%";
+        yAxis += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) + '" stroke="var(--panel-border)" stroke-width="1"/>';
+        yAxis += '<text x="' + (ML - 10) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" font-size="11" fill="var(--text-faint)">' + label + '</text>';
+      });
+
+      // X axis ticks
+      const xTickCount = 6;
+      let xAxis = "";
+      for (let i = 0; i <= xTickCount; i++) {
+        const n = (xMax / xTickCount) * i;
+        const x = xPix(n);
+        xAxis += '<text x="' + x.toFixed(1) + '" y="' + (H - MB + 20) + '" text-anchor="middle" font-size="11" fill="var(--text-faint)">' + fmt(Math.round(n)) + '</text>';
+      }
+
+      const curX = xPix(clears), curY = yPix(Math.max(survivalProb, minProb));
+
+      const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' +
+        yAxis + xAxis + refLines +
+        '<path d="' + d + '" fill="none" stroke="#4f8ef0" stroke-width="2.5"/>' +
+        '<line x1="' + curX.toFixed(1) + '" y1="' + MT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - MB) + '" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3,3"/>' +
+        '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
+        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' clears</text>' +
+        refLabels +
+        '<text x="' + (W - MR) + '" y="' + (H - MB - 8) + '" text-anchor="end" font-size="11" fill="var(--text-dim)">at ' + fmt(xMax) + ' clears: ~1 in ' + fmt(Math.round(1 / Math.pow(1 - DROP_RATE, xMax))) + ' still dry</text>' +
+        '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Corrupted Gauntlet clears →</text>' +
+        '</svg>';
+
+      content.innerHTML =
+        '<div class="luck-wrap">' +
+        '<div class="luck-hero">' +
+        '<h2>5JV\'s Corrupted Gauntlet drought</h2>' +
+        '<div class="lh-sub">Chasing a 1-in-400 unique. No drop yet.</div>' +
+        '<div class="luck-stats">' +
+        '<div class="luck-stat"><div class="ls-num">' + fmt(clears) + '</div><div class="ls-label">Clears</div></div>' +
+        '<div class="luck-stat hot"><div class="ls-num">' + luckPct.toFixed(1) + '%</div><div class="ls-label">Still-dry probability</div></div>' +
+        '<div class="luck-stat mid"><div class="ls-num">' + overExpected.toFixed(2) + '×</div><div class="ls-label">Past expected (' + fmt(expected) + ')</div></div>' +
+        '</div>' +
+        '<div class="luck-note">"Still-dry probability" is the chance, going in, of doing ' + fmt(clears) +
+        ' Corrupted Gauntlet clears at a 1/400 drop rate and getting <em>nothing</em>. At ' + luckPct.toFixed(1) +
+        '%, roughly ' + Math.round(luckPct) + ' out of every 100 players attempting this many clears would still be waiting — everyone else would\'ve already got it.</div>' +
+        '</div>' +
+        '<div class="luck-chart-wrap">' +
+        '<h3>How rare is this drought, really?</h3>' +
+        '<div class="lc-sub">The blue line is the probability of still not having the drop after N clears. Dashed lines mark real-world odds for comparison — where the blue line crosses one, that\'s how many clears it\'d take for the drought itself to be that rare.</div>' +
+        svg +
+        '</div>' +
+        '</div>';
+    }
+
+    function initTabs() {
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+        });
+      });
+    }
+
+    async function init() {
+      let data;
+      try {
+        const res = await fetch("data/latest.json");
+        data = await res.json();
+      } catch (err) {
+        document.getElementById("updated").textContent = "Failed to load data.";
+        console.error(err);
+        return;
+      }
+
+      document.getElementById("updated").textContent =
+        "Updated " + new Date(data.updated).toLocaleString();
+
+      const board = document.getElementById("board");
+      const histories = await Promise.all(data.players.map(p => loadHistory(p.username)));
+
+      data.players.forEach((player, i) => {
+        board.appendChild(renderColumn(player, histories[i]));
+      });
+
+      initTabs();
+      renderGauntletLuck(data.players);
+    }
+
+    init();
+  </script>
+</body>
+</html>
