@@ -2,7 +2,7 @@ name: Track XP
 
 on:
   schedule:
-    - cron: "27 * * * *"
+    - cron: "26 * * * *"
   workflow_dispatch: {}
 
 permissions:
