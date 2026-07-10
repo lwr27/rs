@@ -89,8 +89,8 @@
     color: #ffff00;
     text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
   }
-  .tile .num-top { left: 60.0%; top: 21.6%; }
-  .tile .num-bot { left: 79.0%; top: 59.1%; }
+  .tile .num-top { left: 63.0%; top: 24.6%; }
+  .tile .num-bot { left: 82.0%; top: 62.1%; }
   .tile .xp-bar {
     position: absolute;
     left: 4.8%;
@@ -122,6 +122,13 @@
   }
   .kc-name { color: var(--text-dim); }
   .kc-score { color: var(--accent); font-weight: bold; }
+  .kc-clue-head.expandable { cursor: pointer; user-select: none; }
+  .kc-clue-head.expandable:hover { border-color: var(--accent); }
+  .kc-caret { display: inline-block; width: 10px; color: var(--text-faint); font-size: 0.6rem; }
+  .kc-clue-sub { display: none; flex-direction: column; gap: 2px; margin: 2px 0 2px 10px; }
+  .kc-clue-wrap.open .kc-clue-sub { display: flex; }
+  .kc-sub-row { background: transparent; border-color: transparent; padding: 2px 8px; font-size: 0.66rem; }
+  .kc-sub-row .kc-name { text-transform: capitalize; color: var(--text-faint); }
 
   .session-log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
   .session-log::-webkit-scrollbar { width: 8px; }
@@ -344,15 +351,63 @@
 
         const kcList = document.createElement("div");
         kcList.className = "kc-list";
+
+        // Individual clue tiers get folded under "Clue Scrolls (all)" as an
+        // expandable sub-list, rather than cluttering the main sorted list.
+        const CLUE_TIERS = ["Clue Scrolls (beginner)", "Clue Scrolls (easy)",
+          "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
+          "Clue Scrolls (master)"];
+        const isClueTier = name => CLUE_TIERS.indexOf(name) !== -1;
+
         Object.entries(player.activities)
+          .filter(([name]) => !isClueTier(name))
           .sort((a, b) => b[1].score - a[1].score)
           .forEach(([name, data]) => {
-            const row = document.createElement("div");
-            row.className = "kc-row";
-            row.innerHTML =
-              '<span class="kc-name">' + name + '</span>' +
-              '<span class="kc-score">' + fmt(data.score) + '</span>';
-            kcList.appendChild(row);
+            if (name === "Clue Scrolls (all)") {
+              // Expandable parent row + nested tier breakdown
+              const tiers = CLUE_TIERS
+                .map(t => [t, player.activities[t]])
+                .filter(([, d]) => d && d.score > 0);
+
+              const wrap = document.createElement("div");
+              wrap.className = "kc-clue-wrap";
+
+              const row = document.createElement("div");
+              row.className = "kc-row kc-clue-head" + (tiers.length ? " expandable" : "");
+              row.innerHTML =
+                '<span class="kc-name">' +
+                (tiers.length ? '<span class="kc-caret">▸</span> ' : '') +
+                'Clue Scrolls (all)</span>' +
+                '<span class="kc-score">' + fmt(data.score) + '</span>';
+              wrap.appendChild(row);
+
+              if (tiers.length) {
+                const sub = document.createElement("div");
+                sub.className = "kc-clue-sub";
+                tiers.forEach(([tname, tdata]) => {
+                  const label = tname.replace("Clue Scrolls (", "").replace(")", "");
+                  const srow = document.createElement("div");
+                  srow.className = "kc-row kc-sub-row";
+                  srow.innerHTML =
+                    '<span class="kc-name">' + label + '</span>' +
+                    '<span class="kc-score">' + fmt(tdata.score) + '</span>';
+                  sub.appendChild(srow);
+                });
+                wrap.appendChild(sub);
+                row.addEventListener("click", () => {
+                  const open = wrap.classList.toggle("open");
+                  row.querySelector(".kc-caret").textContent = open ? "▾" : "▸";
+                });
+              }
+              kcList.appendChild(wrap);
+            } else {
+              const row = document.createElement("div");
+              row.className = "kc-row";
+              row.innerHTML =
+                '<span class="kc-name">' + name + '</span>' +
+                '<span class="kc-score">' + fmt(data.score) + '</span>';
+              kcList.appendChild(row);
+            }
           });
         col.appendChild(kcList);
       }
