@@ -89,19 +89,19 @@
     color: #ffff00;
     text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000;
   }
-  .tile .num-top { left: 55.2%; top: 23.1%; }
-  .tile .num-bot { left: 74.3%; top: 60.5%; }
+  .tile .num-top { left: 60.0%; top: 21.6%; }
+  .tile .num-bot { left: 79.0%; top: 59.1%; }
   .tile .xp-bar {
     position: absolute;
-    left: 0;
-    top: 93.6%;
+    left: 4.8%;
+    top: 93.75%;
     transform: translateY(-50%);
-    height: max(2px, 6.2%);
+    height: max(2px, 6.25%);
   }
   .total-overlay {
     position: absolute;
-    left: 78%; top: 93.9%; transform: translate(-50%, -50%);
-    text-align: center; line-height: 1.2;
+    left: 60.2%; top: 93.6%; transform: translateY(-50%);
+    line-height: 1;
   }
   .total-overlay .tv { color: #ffff00; font-weight: bold; font-size: clamp(10px, 3cqw, 15px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
 
@@ -165,13 +165,15 @@
   <div class="board" id="board"></div>
 
   <script>
-    // Tile edges measured from the actual Skills_panel.png (pixel analysis of
-    // separator lines at 864x1164), as % of panel width/height. The grid is NOT
-    // perfectly uniform, which is why the old uniform arrays never lined up.
-    const COL_EDGES = [3.36, 33.68, 65.16, 95.95];
-    const ROW_EDGES = [3.09, 14.00, 24.66, 35.74, 46.48, 57.65, 68.56, 79.30, 90.21];
+    // Tile-interior edges measured from the actual Skills_panel.png (pixel
+    // profiling of the separator dark-gap/bevel structure at 864x1164), as %
+    // of panel width/height. Each edge is the "rise point" where the tile
+    // interior begins after the dark separator gap - matching how positions
+    // were measured from a real game screenshot. The grid is NOT uniform.
+    const COL_EDGES = [4.51, 34.84, 65.51, 96.30];
+    const ROW_EDGES = [3.18, 14.26, 25.09, 36.00, 46.91, 57.82, 68.81, 79.73, 90.38];
     // Bar geometry measured from a real game screenshot (skill progress bars
-    // plugin): left-anchored at tile edge, max width 84.1% of tile, hue 0-120.
+    // plugin): inset 4.8% from tile edge, max width 84.1% of tile, hue 0-120.
     const BAR_MAX_W = 84.1;
     const GRID_SKILLS = [
       ["Attack", "Hitpoints", "Mining"],
