@@ -100,9 +100,10 @@
   }
   .total-overlay {
     position: absolute;
-    left: 60.2%; top: 93.6%; transform: translateY(-50%);
-    line-height: 1;
+    left: 50%; top: 93.6%; transform: translate(-50%, -50%);
+    line-height: 1; display: flex; align-items: baseline; gap: 0.4em;
   }
+  .total-overlay .tl { color: #ffff00; font-weight: bold; font-size: clamp(9px, 2.6cqw, 13px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
   .total-overlay .tv { color: #ffff00; font-weight: bold; font-size: clamp(10px, 3cqw, 15px); text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000; }
 
   .section-label {
@@ -337,7 +338,7 @@
 
       const totalOverlay = document.createElement("div");
       totalOverlay.className = "total-overlay";
-      totalOverlay.innerHTML = '<span class="tv">' + player.totalLevel + '</span>';
+      totalOverlay.innerHTML = '<span class="tl">Total level:</span><span class="tv">' + player.totalLevel + '</span>';
       panel.appendChild(totalOverlay);
 
       col.appendChild(panel);
