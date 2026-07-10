@@ -29,13 +29,13 @@ const ACTIVITIES = [
   "General Graardor", "Giant Mole", "Grotesque Guardians", "Hespori",
   "Kalphite Queen", "King Black Dragon", "Kraken", "Kree'Arra", "K'ril Tsutsaroth",
   "Lunar Chests", "Mimic", "Nex", "Nightmare", "Phosani's Nightmare", "Obor",
-  "Phantom Muspah", "Sarachnis", "Scorpia", "Scurrius", "Shellbane Gryphon",
+  "Sarachnis", "Scorpia", "Scurrius", "Shellbane Gryphon",
   "Skotizo", "Sol Heredit", "Spindel", "Tempoross", "The Gauntlet",
   "The Corrupted Gauntlet", "The Hueycoatl", "The Leviathan", "The Royal Titans",
   "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
   "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
   "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
-  "Wintertodt", "Yama", "Zalcano", "Zulrah"
+  "Wintertodt", "Yama", "Zalcano", "Zulrah", "Phantom Muspah"
 ];
 
 // Curated subset actually surfaced in the dashboard (clues + boss/raid killcounts).
