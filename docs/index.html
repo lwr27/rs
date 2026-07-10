@@ -272,7 +272,7 @@
     async function loadHistory(username) {
       const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
       try {
-        const res = await fetch("data/snapshots/" + safe + ".json");
+        const res = await fetch("data/snapshots/" + safe + ".json?t=" + Date.now(), { cache: "no-store" });
         if (!res.ok) return null;
         return await res.json();
       } catch { return null; }
@@ -580,7 +580,7 @@
     async function init() {
       let data;
       try {
-        const res = await fetch("data/latest.json");
+        const res = await fetch("data/latest.json?t=" + Date.now(), { cache: "no-store" });
         data = await res.json();
       } catch (err) {
         document.getElementById("updated").textContent = "Failed to load data.";
