@@ -144,7 +144,7 @@
   .session-item .stotal { color: var(--accent); font-weight: bold; }
   .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
 
-  .cal-wrap { overflow-x: auto; padding-bottom: 4px; }
+  .cal-wrap { overflow-x: auto; padding: 18px 4px 4px 4px; }
   .cal-grid { display: flex; gap: 3px; width: max-content; }
   .cal-week { display: flex; flex-direction: column; gap: 3px; position: relative; }
   .cal-month-label {
@@ -159,15 +159,6 @@
   .cal-day.cal-lvl-2 { background: #2d5a8c; border-color: #2d5a8c; }
   .cal-day.cal-lvl-3 { background: #3d7ab8; border-color: #3d7ab8; }
   .cal-day.cal-lvl-4 { background: #4f8ef0; border-color: #4f8ef0; }
-  .cal-day { cursor: pointer; }
-  .cal-day:hover { outline: 1px solid var(--text-faint); outline-offset: 1px; }
-  .cal-day.cal-selected { outline: 2px solid #ff9f43; outline-offset: 1px; }
-  .cal-week.cal-month-gap { margin-left: 10px; }
-  .cal-selected-info {
-    margin-top: 8px; font-size: 0.68rem; color: var(--text-dim); min-height: 1em;
-  }
-  .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
-  .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
   .cal-legend {
     display: flex; align-items: center; gap: 4px; margin-top: 6px;
     font-size: 0.62rem; color: var(--text-faint);
@@ -490,22 +481,32 @@
       return col;
     }
 
+    // Formats any Date/timestamp as its calendar day (YYYY-MM-DD) in UK local
+    // time, correctly accounting for BST rather than assuming a fixed offset.
+    const LONDON_FMT = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit"
+    });
+    function londonDateKey(d) { return LONDON_FMT.format(d); }
+
     function renderCalendar(history) {
       const wrap = document.createElement("div");
       wrap.className = "cal-wrap";
 
       const entries = (history && history.history) ? history.history : [];
 
-      // Aggregate total XP gained per calendar day (UTC date).
+      // Aggregate total XP gained per calendar day, using the UK calendar
+      // date the snapshot was taken on (not the raw UTC timestamp date).
       const byDay = {};
       entries.forEach(e => {
         if (!e.totalGain || e.totalGain <= 0) return;
-        const day = e.timestamp.slice(0, 10); // YYYY-MM-DD
+        const day = londonDateKey(new Date(e.timestamp));
         byDay[day] = (byDay[day] || 0) + e.totalGain;
       });
 
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
+      // "Today" and the grid's day-by-day walk are done on the UK calendar
+      // date too, so a session at 11pm BST lands on the correct UK day
+      // rather than rolling into the next UTC day.
+      const today = new Date(londonDateKey(new Date()) + "T00:00:00Z");
 
       // Start from the earliest played day (or today if none), rounded back
       // to the most recent Sunday, capped at 20 weeks back so the grid
@@ -530,38 +531,19 @@
       const grid = document.createElement("div");
       grid.className = "cal-grid";
 
-      const selectedInfo = document.createElement("div");
-      selectedInfo.className = "cal-selected-info";
-      selectedInfo.textContent = "Click a day to see details";
-
-      let selectedCell = null;
-      function selectCell(cell, key, xp) {
-        if (selectedCell) selectedCell.classList.remove("cal-selected");
-        cell.classList.add("cal-selected");
-        selectedCell = cell;
-        const dateLabel = new Date(key + "T00:00:00Z").toLocaleDateString("en-US", {
-          weekday: "long", month: "short", day: "numeric", timeZone: "UTC"
-        });
-        selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
-          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp</span>' : 'no gains');
-      }
-
       let cur = new Date(start);
       let lastMonth = -1;
-      let isFirstWeek = true;
       while (cur <= today) {
         const week = document.createElement("div");
         week.className = "cal-week";
 
         if (cur.getUTCMonth() !== lastMonth) {
           lastMonth = cur.getUTCMonth();
-          if (!isFirstWeek) week.classList.add("cal-month-gap");
           const ml = document.createElement("div");
           ml.className = "cal-month-label";
           ml.textContent = cur.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
           week.appendChild(ml);
         }
-        isFirstWeek = false;
 
         for (let d = 0; d < 7; d++) {
           const key = cur.toISOString().slice(0, 10);
@@ -573,7 +555,6 @@
             const xp = byDay[key] || 0;
             cell.className = "cal-day cal-lvl-" + levelFor(xp);
             cell.title = key + (xp ? ": " + fmt(xp) + " xp" : ": no gains");
-            cell.addEventListener("click", () => selectCell(cell, key, xp));
           }
           week.appendChild(cell);
           cur.setUTCDate(cur.getUTCDate() + 1);
@@ -581,7 +562,6 @@
         grid.appendChild(week);
       }
       wrap.appendChild(grid);
-      wrap.appendChild(selectedInfo);
 
       const legend = document.createElement("div");
       legend.className = "cal-legend";
