@@ -143,6 +143,27 @@
   .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
   .session-item .stotal { color: var(--accent); font-weight: bold; }
   .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
+
+  .cal-wrap { overflow-x: auto; padding-bottom: 4px; }
+  .cal-grid { display: flex; gap: 3px; width: max-content; }
+  .cal-week { display: flex; flex-direction: column; gap: 3px; position: relative; }
+  .cal-month-label {
+    position: absolute; top: -16px; left: 0; font-size: 0.6rem; color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .cal-day {
+    width: 11px; height: 11px; border-radius: 2px; background: var(--cell);
+    border: 1px solid var(--panel-border);
+  }
+  .cal-day.cal-lvl-1 { background: #1c3a5e; border-color: #1c3a5e; }
+  .cal-day.cal-lvl-2 { background: #2d5a8c; border-color: #2d5a8c; }
+  .cal-day.cal-lvl-3 { background: #3d7ab8; border-color: #3d7ab8; }
+  .cal-day.cal-lvl-4 { background: #4f8ef0; border-color: #4f8ef0; }
+  .cal-legend {
+    display: flex; align-items: center; gap: 4px; margin-top: 6px;
+    font-size: 0.62rem; color: var(--text-faint);
+  }
+  .cal-legend .cal-day { width: 10px; height: 10px; }
   .session-empty { color: var(--text-faint); font-size: 0.72rem; text-align: center; padding: 12px; }
 
   .tooltip {
@@ -451,7 +472,95 @@
       }
       col.appendChild(log);
 
+      const calLabel = document.createElement("div");
+      calLabel.className = "section-label";
+      calLabel.textContent = "Days played";
+      col.appendChild(calLabel);
+      col.appendChild(renderCalendar(history));
+
       return col;
+    }
+
+    function renderCalendar(history) {
+      const wrap = document.createElement("div");
+      wrap.className = "cal-wrap";
+
+      const entries = (history && history.history) ? history.history : [];
+
+      // Aggregate total XP gained per calendar day (UTC date).
+      const byDay = {};
+      entries.forEach(e => {
+        if (!e.totalGain || e.totalGain <= 0) return;
+        const day = e.timestamp.slice(0, 10); // YYYY-MM-DD
+        byDay[day] = (byDay[day] || 0) + e.totalGain;
+      });
+
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+
+      // Start from the earliest played day (or today if none), rounded back
+      // to the most recent Sunday, capped at 20 weeks back so the grid
+      // doesn't grow unbounded once history gets long.
+      const dayKeys = Object.keys(byDay).sort();
+      let start = dayKeys.length ? new Date(dayKeys[0] + "T00:00:00Z") : new Date(today);
+      const minStart = new Date(today);
+      minStart.setUTCDate(minStart.getUTCDate() - 20 * 7);
+      if (start < minStart) start = minStart;
+      start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // back to Sunday
+
+      const maxGain = Math.max(1, ...Object.values(byDay));
+      const levelFor = xp => {
+        if (!xp) return 0;
+        const pct = xp / maxGain;
+        if (pct > 0.75) return 4;
+        if (pct > 0.5) return 3;
+        if (pct > 0.25) return 2;
+        return 1;
+      };
+
+      const grid = document.createElement("div");
+      grid.className = "cal-grid";
+
+      let cur = new Date(start);
+      let lastMonth = -1;
+      while (cur <= today) {
+        const week = document.createElement("div");
+        week.className = "cal-week";
+
+        if (cur.getUTCMonth() !== lastMonth) {
+          lastMonth = cur.getUTCMonth();
+          const ml = document.createElement("div");
+          ml.className = "cal-month-label";
+          ml.textContent = cur.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+          week.appendChild(ml);
+        }
+
+        for (let d = 0; d < 7; d++) {
+          const key = cur.toISOString().slice(0, 10);
+          const cell = document.createElement("div");
+          if (cur > today) {
+            cell.className = "cal-day";
+            cell.style.visibility = "hidden";
+          } else {
+            const xp = byDay[key] || 0;
+            cell.className = "cal-day cal-lvl-" + levelFor(xp);
+            cell.title = key + (xp ? ": " + fmt(xp) + " xp" : ": no gains");
+          }
+          week.appendChild(cell);
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+        grid.appendChild(week);
+      }
+      wrap.appendChild(grid);
+
+      const legend = document.createElement("div");
+      legend.className = "cal-legend";
+      legend.innerHTML = "Less " +
+        [0, 1, 2, 3, 4].map(l => '<span class="cal-day cal-lvl-' + l + '"></span>').join("") +
+        " More";
+      wrap.appendChild(legend);
+
+      return wrap;
     }
 
     function renderGauntletLuck(players) {
