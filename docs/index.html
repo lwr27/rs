@@ -142,6 +142,7 @@
   .session-item .srow { display: flex; justify-content: space-between; align-items: center; }
   .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
   .session-item .stotal { color: var(--accent); font-weight: bold; }
+  .session-item .stotal-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
   .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
   .session-item .smaxed { color: var(--text-faint); opacity: 0.8; }
 
@@ -169,6 +170,7 @@
   }
   .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
   .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
+  .cal-selected-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
   .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); }
   .cal-day-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
   .cal-legend {
@@ -485,11 +487,17 @@
           const nonMaxedTotal = gains
             .filter(([sk]) => !isMaxed(sk))
             .reduce((sum, [, xp]) => sum + xp, 0);
+          const maxedTotal = gains
+            .filter(([sk]) => isMaxed(sk))
+            .reduce((sum, [, xp]) => sum + xp, 0);
 
           const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ") +
             (maxedBreakdown ? ' <span class="smaxed">(99s: ' + maxedBreakdown + ')</span>' : '');
           item.innerHTML =
-            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(nonMaxedTotal) + ' xp</span></div>' +
+            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span>' +
+            '<span class="stotal">+' + fmt(nonMaxedTotal) + ' xp' +
+            (maxedTotal ? ' <span class="stotal-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
+            '</span></div>' +
             (fullBreakdown.trim() ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
           log.appendChild(item);
         });
@@ -610,12 +618,16 @@
         const activities = activityEntries.map(([n, v]) => n + " +" + fmt(v)).join(", ");
         const maxedSkills = skillEntries.filter(([sk]) => isMaxed(sk))
           .map(([sk, v]) => sk + " +" + fmt(v)).join(", ");
+        const maxedTotal = skillEntries.filter(([sk]) => isMaxed(sk))
+          .reduce((sum, [, v]) => sum + v, 0);
 
         const breakdown = [mainSkills, activities].filter(Boolean).join(" — ") +
           (maxedSkills ? ' <span class="smaxed">(99s: ' + maxedSkills + ')</span>' : "");
 
         selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
-          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp</span>' : 'no gains') +
+          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp' +
+            (maxedTotal ? ' <span class="csi-xp-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
+            '</span>' : 'no gains') +
           (breakdown.trim() ? '<div class="cal-day-breakdown">' + breakdown + '</div>' : "");
       }
 
