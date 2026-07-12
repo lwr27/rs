@@ -692,17 +692,21 @@
       const expected = Math.round(1 / DROP_RATE);
       const overExpected = (clears / expected);
 
-      // Reference drop rates from elsewhere in OSRS to compare the dry
-      // streak against, sorted common -> rare.
+      // A varied "dealer's choice" set of real, verified odds to compare the
+      // dry streak against - math trivia, poker, sports, and nature - sorted
+      // common -> rare.
       const REFS = [
-        { label: "Barrows: unique piece from a specific brother", p: 1 / 17.4, color: "#7bd88f" },
-        { label: "Zulrah: any unique (fang/visage combined)", p: 1 / 128, color: "#4f8ef0" },
-        { label: "Zulrah: Tanzanite Fang specifically", p: 1 / 512, color: "#ff9f43" },
+        { label: "Two people in a room of 23 sharing a birthday", p: 0.507, color: "#7bd88f" },
+        { label: "Being naturally left-handed", p: 0.10, color: "#5fd0c0" },
+        { label: "Having naturally red hair", p: 0.02, color: "#c084fc" },
+        { label: "Being dealt pocket aces in Texas Hold'em", p: 1 / 221, color: "#4f8ef0" },
+        { label: "A PGA pro acing a given par-3 hole-in-one attempt", p: 1 / 2500, color: "#ff9f43" },
+        { label: "Finding a four-leaf clover", p: 1 / 10000, color: "#ff6b6b" },
       ];
       const lnKeep = Math.log(1 - DROP_RATE);
       REFS.forEach(r => { r.n = Math.log(r.p) / lnKeep; });
 
-      const xMax = 2500;
+      const xMax = 4000;
       const minProb = Math.pow(1 - DROP_RATE, xMax) / 1.5;
 
       const W = 900, H = 460, ML = 92, MR = 24, MT = 20, MB = 46;
