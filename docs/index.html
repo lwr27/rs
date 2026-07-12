@@ -143,6 +143,7 @@
   .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
   .session-item .stotal { color: var(--accent); font-weight: bold; }
   .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
+  .session-item .smaxed { color: var(--text-faint); opacity: 0.8; }
 
   .cal-wrap { overflow-x: auto; padding: 18px 4px 4px 4px; }
   .cal-grid { display: flex; gap: 3px; width: max-content; }
@@ -461,19 +462,30 @@
         sessions.slice(0, 60).forEach(s => {
           const item = document.createElement("div");
           item.className = "session-item";
-          const breakdown = Object.entries(s.gains || {})
+
+          const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
+          const gains = Object.entries(s.gains || {})
             .filter(([sk, xp]) => sk !== "Overall" && xp > 0)
-            .sort((a, b) => b[1] - a[1])
+            .sort((a, b) => b[1] - a[1]);
+
+          const breakdown = gains
+            .filter(([sk]) => !isMaxed(sk))
             .map(([sk, xp]) => sk + " +" + fmt(xp))
             .join(", ");
           const activityBreakdown = Object.entries(s.activityGains || {})
             .sort((a, b) => b[1] - a[1])
             .map(([name, score]) => name + " +" + fmt(score))
             .join(", ");
-          const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ");
+          const maxedBreakdown = gains
+            .filter(([sk]) => isMaxed(sk))
+            .map(([sk, xp]) => sk + " +" + fmt(xp))
+            .join(", ");
+
+          const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ") +
+            (maxedBreakdown ? ' <span class="smaxed">(99s: ' + maxedBreakdown + ')</span>' : '');
           item.innerHTML =
             '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(s.totalGain) + ' xp</span></div>' +
-            (fullBreakdown ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
+            (fullBreakdown.trim() ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
           log.appendChild(item);
         });
       } else {
@@ -617,20 +629,18 @@
       const expected = Math.round(1 / DROP_RATE);
       const overExpected = (clears / expected);
 
-      // Real-world reference probabilities to compare the dry streak against,
-      // ordered rarest-to-common isn't needed; sorted common -> rare for the chart.
+      // Reference drop rates from elsewhere in OSRS to compare the dry
+      // streak against, sorted common -> rare.
       const REFS = [
-        { label: "Flipping 5 heads in a row", p: 1 / 32, color: "#7bd88f" },
-        { label: "Rolling snake eyes twice in a row", p: 1 / 1296, color: "#4f8ef0" },
-        { label: "Struck by lightning (lifetime odds)", p: 1 / 15300, color: "#ffd24f" },
-        { label: "Dealt a royal flush in poker", p: 1 / 649740, color: "#ff9f43" },
-        { label: "Winning the Powerball jackpot", p: 1 / 292201338, color: "#ff6b6b" },
+        { label: "Barrows: unique piece from a specific brother", p: 1 / 17.4, color: "#7bd88f" },
+        { label: "Zulrah: any unique (fang/visage combined)", p: 1 / 128, color: "#4f8ef0" },
+        { label: "Zulrah: Tanzanite Fang specifically", p: 1 / 512, color: "#ff9f43" },
       ];
       const lnKeep = Math.log(1 - DROP_RATE);
       REFS.forEach(r => { r.n = Math.log(r.p) / lnKeep; });
 
-      const xMax = Math.max(clears * 1.15, REFS[REFS.length - 1].n * 1.08);
-      const minProb = REFS[REFS.length - 1].p / 4;
+      const xMax = 2500;
+      const minProb = Math.pow(1 - DROP_RATE, xMax) / 1.5;
 
       const W = 900, H = 460, ML = 92, MR = 24, MT = 20, MB = 46;
       const plotW = W - ML - MR, plotH = H - MT - MB;
@@ -690,6 +700,7 @@
         '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
         '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' clears</text>' +
         refLabels +
+        '<text x="' + (W - MR) + '" y="' + (H - MB - 8) + '" text-anchor="end" font-size="11" fill="var(--text-dim)">at ' + fmt(xMax) + ' clears: ~1 in ' + fmt(Math.round(1 / Math.pow(1 - DROP_RATE, xMax))) + ' still dry</text>' +
         '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Corrupted Gauntlet clears →</text>' +
         '</svg>';
 
