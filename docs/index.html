@@ -482,11 +482,14 @@
             .filter(([sk]) => isMaxed(sk))
             .map(([sk, xp]) => sk + " +" + fmt(xp))
             .join(", ");
+          const nonMaxedTotal = gains
+            .filter(([sk]) => !isMaxed(sk))
+            .reduce((sum, [, xp]) => sum + xp, 0);
 
           const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ") +
             (maxedBreakdown ? ' <span class="smaxed">(99s: ' + maxedBreakdown + ')</span>' : '');
           item.innerHTML =
-            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(s.totalGain) + ' xp</span></div>' +
+            '<div class="srow"><span class="stime">' + timeAgo(s.timestamp) + '</span><span class="stotal">+' + fmt(nonMaxedTotal) + ' xp</span></div>' +
             (fullBreakdown.trim() ? '<div class="sbreak">' + fullBreakdown + '</div>' : '');
           log.appendChild(item);
         });
@@ -517,6 +520,8 @@
 
       const entries = (history && history.history) ? history.history : [];
 
+      const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
+
       // Aggregate total XP, and a per-skill/activity breakdown, per calendar
       // day, using the UK calendar date the snapshot was taken on (not the
       // raw UTC timestamp date).
@@ -539,6 +544,17 @@
         });
       });
 
+      // Non-maxed XP total per day (excludes activity scores and any XP
+      // gained in skills already at 99) - this is what drives the visible
+      // headline number and cell shading, so a day spent mostly on an
+      // already-99 skill doesn't look artificially "big".
+      const nonMaxedByDay = {};
+      Object.entries(breakdownByDay).forEach(([day, bucket]) => {
+        nonMaxedByDay[day] = Object.entries(bucket)
+          .filter(([k]) => !k.startsWith("__act__") && !isMaxed(k))
+          .reduce((sum, [, v]) => sum + v, 0);
+      });
+
       // "Today" and the grid's day-by-day walk are done on the UK calendar
       // date too, so a session at 11pm BST lands on the correct UK day
       // rather than rolling into the next UTC day.
@@ -554,7 +570,7 @@
       if (start < minStart) start = minStart;
       start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // back to Sunday
 
-      const maxGain = Math.max(1, ...Object.values(byDay));
+      const maxGain = Math.max(1, ...Object.values(nonMaxedByDay));
       const levelFor = xp => {
         if (!xp) return 0;
         const pct = xp / maxGain;
@@ -580,7 +596,6 @@
           weekday: "long", month: "short", day: "numeric", timeZone: "UTC"
         });
 
-        const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
         const bucket = breakdownByDay[key] || {};
         const skillEntries = Object.entries(bucket)
           .filter(([k]) => !k.startsWith("__act__"))
@@ -628,7 +643,7 @@
             cell.className = "cal-day";
             cell.style.visibility = "hidden";
           } else {
-            const xp = byDay[key] || 0;
+            const xp = nonMaxedByDay[key] || 0;
             cell.className = "cal-day cal-lvl-" + levelFor(xp);
             cell.title = key + (xp ? ": " + fmt(xp) + " xp" : ": no gains");
             cell.addEventListener("click", () => selectCell(cell, key, xp));
