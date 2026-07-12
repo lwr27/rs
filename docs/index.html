@@ -169,6 +169,8 @@
   }
   .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
   .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
+  .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); }
+  .cal-day-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
   .cal-legend {
     display: flex; align-items: center; gap: 4px; margin-top: 6px;
     font-size: 0.62rem; color: var(--text-faint);
@@ -497,7 +499,7 @@
       calLabel.className = "section-label";
       calLabel.textContent = "Days played";
       col.appendChild(calLabel);
-      col.appendChild(renderCalendar(history));
+      col.appendChild(renderCalendar(player, history));
 
       return col;
     }
@@ -509,19 +511,32 @@
     });
     function londonDateKey(d) { return LONDON_FMT.format(d); }
 
-    function renderCalendar(history) {
+    function renderCalendar(player, history) {
       const wrap = document.createElement("div");
       wrap.className = "cal-wrap";
 
       const entries = (history && history.history) ? history.history : [];
 
-      // Aggregate total XP gained per calendar day, using the UK calendar
-      // date the snapshot was taken on (not the raw UTC timestamp date).
+      // Aggregate total XP, and a per-skill/activity breakdown, per calendar
+      // day, using the UK calendar date the snapshot was taken on (not the
+      // raw UTC timestamp date).
       const byDay = {};
+      const breakdownByDay = {};
       entries.forEach(e => {
         if (!e.totalGain || e.totalGain <= 0) return;
         const day = londonDateKey(new Date(e.timestamp));
         byDay[day] = (byDay[day] || 0) + e.totalGain;
+
+        if (!breakdownByDay[day]) breakdownByDay[day] = {};
+        const bucket = breakdownByDay[day];
+        Object.entries(e.gains || {}).forEach(([sk, xp]) => {
+          if (sk === "Overall" || !(xp > 0)) return;
+          bucket[sk] = (bucket[sk] || 0) + xp;
+        });
+        Object.entries(e.activityGains || {}).forEach(([name, score]) => {
+          if (!(score > 0)) return;
+          bucket["__act__" + name] = (bucket["__act__" + name] || 0) + score;
+        });
       });
 
       // "Today" and the grid's day-by-day walk are done on the UK calendar
@@ -564,8 +579,29 @@
         const dateLabel = new Date(key + "T00:00:00Z").toLocaleDateString("en-US", {
           weekday: "long", month: "short", day: "numeric", timeZone: "UTC"
         });
+
+        const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
+        const bucket = breakdownByDay[key] || {};
+        const skillEntries = Object.entries(bucket)
+          .filter(([k]) => !k.startsWith("__act__"))
+          .sort((a, b) => b[1] - a[1]);
+        const activityEntries = Object.entries(bucket)
+          .filter(([k]) => k.startsWith("__act__"))
+          .map(([k, v]) => [k.slice(7), v])
+          .sort((a, b) => b[1] - a[1]);
+
+        const mainSkills = skillEntries.filter(([sk]) => !isMaxed(sk))
+          .map(([sk, v]) => sk + " +" + fmt(v)).join(", ");
+        const activities = activityEntries.map(([n, v]) => n + " +" + fmt(v)).join(", ");
+        const maxedSkills = skillEntries.filter(([sk]) => isMaxed(sk))
+          .map(([sk, v]) => sk + " +" + fmt(v)).join(", ");
+
+        const breakdown = [mainSkills, activities].filter(Boolean).join(" — ") +
+          (maxedSkills ? ' <span class="smaxed">(99s: ' + maxedSkills + ')</span>' : "");
+
         selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
-          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp</span>' : 'no gains');
+          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp</span>' : 'no gains') +
+          (breakdown.trim() ? '<div class="cal-day-breakdown">' + breakdown + '</div>' : "");
       }
 
       let cur = new Date(start);
