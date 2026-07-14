@@ -1,5 +1,8 @@
 name: Track XP
 
+on:
+  workflow_dispatch:
+
 permissions:
   contents: write
 
