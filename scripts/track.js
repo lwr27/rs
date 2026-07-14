@@ -134,6 +134,15 @@ function diffActivities(prevActivities, currActivities) {
   return gains;
 }
 
+// Formats a timestamp as its UK calendar day (YYYY-MM-DD), matching the
+// site's own day-bucketing so compacted history lines up with what the
+// calendar/session log actually display.
+function londonDateKey(d) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(d);
+}
+
 function appendSnapshot(username, entry) {
   const file = snapshotPath(username);
   let raw = { username, history: [] };
@@ -141,11 +150,51 @@ function appendSnapshot(username, entry) {
     raw = JSON.parse(fs.readFileSync(file, "utf8"));
   }
   raw.history.push(entry);
-  // Keep history bounded so the repo doesn't grow forever.
-  const MAX_ENTRIES = 24 * 30; // ~30 days of hourly snapshots
+
+  // The session log and calendar only ever read timestamp/gains/totalGain/
+  // activityGains from history - never the full stats/activities snapshot.
+  // So instead of deleting old entries outright (which silently shrinks how
+  // far back the calendar can show), keep full-detail entries for the last
+  // few days, then permanently compact anything older into one lightweight
+  // summary per UK calendar day. History then grows by ~1 tiny entry/day
+  // forever instead of by (entries per day) forever.
+  const RAW_RETENTION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days of full detail
+  const cutoff = Date.now() - RAW_RETENTION_MS;
+
+  const recent = [];
+  const byDay = {};
+  raw.history.forEach(e => {
+    if (new Date(e.timestamp).getTime() >= cutoff) {
+      recent.push(e);
+      return;
+    }
+    const day = londonDateKey(new Date(e.timestamp));
+    if (!byDay[day]) {
+      byDay[day] = {
+        timestamp: day + "T12:00:00.000Z", compact: true,
+        gains: {}, totalGain: 0, activityGains: {}
+      };
+    }
+    const bucket = byDay[day];
+    bucket.totalGain += e.totalGain || 0;
+    Object.entries(e.gains || {}).forEach(([sk, xp]) => {
+      bucket.gains[sk] = (bucket.gains[sk] || 0) + xp;
+    });
+    Object.entries(e.activityGains || {}).forEach(([name, score]) => {
+      bucket.activityGains[name] = (bucket.activityGains[name] || 0) + score;
+    });
+  });
+
+  const compacted = Object.values(byDay).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  raw.history = compacted.concat(recent.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)));
+
+  // Safety net only - compaction should keep this well under control on its
+  // own, this just guards against something unexpected blowing the file up.
+  const MAX_ENTRIES = 5000;
   if (raw.history.length > MAX_ENTRIES) {
     raw.history = raw.history.slice(raw.history.length - MAX_ENTRIES);
   }
+
   fs.writeFileSync(file, JSON.stringify(raw, null, 2));
 }
 
