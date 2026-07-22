@@ -828,7 +828,7 @@
 
     function renderRangerLuck(players) {
       const content = document.getElementById("rangerLuckContent");
-      const player = players.find(p => p.username === "5JV") || players[0];
+      const player = players.find(p => p.username === "6LR") || players[0];
       if (!player) { content.innerHTML = ""; return; }
 
       // Verified against the OSRS Wiki (citing Jagex's own stated drop rate):
@@ -911,7 +911,7 @@
         '<path d="' + d + '" fill="none" stroke="#4f8ef0" stroke-width="2.5"/>' +
         '<line x1="' + curX.toFixed(1) + '" y1="' + MT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - MB) + '" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3,3"/>' +
         '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
-        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' medium clues</text>' +
+        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">6LR: ' + fmt(clears) + ' medium clues</text>' +
         refLabels +
         '<text x="' + (W - MR) + '" y="' + (H - MB - 8) + '" text-anchor="end" font-size="11" fill="var(--text-dim)">at ' + fmt(xMax) + ' clues: ~1 in ' + fmt(Math.round(1 / Math.pow(1 - DROP_RATE, xMax))) + ' still dry</text>' +
         '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Medium clues completed →</text>' +
@@ -920,7 +920,7 @@
       content.innerHTML =
         '<div class="luck-wrap">' +
         '<div class="luck-hero">' +
-        '<h2>5JV\'s Ranger Boots drought</h2>' +
+        '<h2>6LR\'s Ranger Boots drought</h2>' +
         '<div class="lh-sub">Chasing a ~1-in-283.6 medium clue unique. No drop yet.</div>' +
         '<div class="luck-stats">' +
         '<div class="luck-stat"><div class="ls-num">' + fmt(clears) + '</div><div class="ls-label">Medium clues</div></div>' +
