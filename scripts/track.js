@@ -143,6 +143,44 @@ function londonDateKey(d) {
   }).format(d);
 }
 
+function diffLevelUps(prevStats, currStats) {
+  if (!prevStats) return []; // first ever poll for this account - nothing to compare against
+  const levelUps = [];
+  for (const skill of SKILLS) {
+    if (skill === "Overall") continue;
+    const prevLevel = prevStats[skill]?.level;
+    const currLevel = currStats[skill].level;
+    if (prevLevel != null && currLevel > prevLevel) {
+      levelUps.push({ skill, from: prevLevel, to: currLevel });
+    }
+  }
+  return levelUps;
+}
+
+async function sendDiscordNotifications(messages) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl || !messages.length) return;
+
+  // Discord webhook content is capped at 2000 chars - won't realistically
+  // matter for 3 players, but guard against it rather than let a rare big
+  // run fail the whole request.
+  let content = messages.join("\n");
+  if (content.length > 1900) content = content.slice(0, 1900) + "\n…and more";
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content })
+    });
+    if (!res.ok) {
+      console.error(`Discord webhook failed: ${res.status} ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error(`Discord webhook error: ${err.message}`);
+  }
+}
+
 function appendSnapshot(username, entry) {
   const file = snapshotPath(username);
   let raw = { username, history: [] };
@@ -203,6 +241,7 @@ async function main() {
   const players = loadPlayers();
   const timestamp = new Date().toISOString();
   const latest = { updated: timestamp, players: [] };
+  const notifications = [];
 
   for (const { username, mode } of players) {
     try {
@@ -210,6 +249,11 @@ async function main() {
       const prevEntry = loadPreviousSnapshot(username);
       const { gains, totalGain } = diffXp(prevEntry?.stats, currStats);
       const activityGains = diffActivities(prevEntry?.activities, currActivities);
+
+      const levelUps = diffLevelUps(prevEntry?.stats, currStats);
+      levelUps.forEach(lu => {
+        notifications.push(`🎉 **${username}** just hit level **${lu.to}** ${lu.skill}!`);
+      });
 
       const entry = {
         timestamp,
@@ -246,6 +290,7 @@ async function main() {
   }
 
   fs.writeFileSync(LATEST_FILE, JSON.stringify(latest, null, 2));
+  await sendDiscordNotifications(notifications);
 }
 
 main().catch((err) => {
