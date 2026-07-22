@@ -17,6 +17,8 @@ jobs:
           node-version: "20"
 
       - name: Run tracker
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: node scripts/track.js
 
       - name: Copy data into docs
