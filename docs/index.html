@@ -684,10 +684,16 @@
       if (!player) { content.innerHTML = ""; return; }
 
       const DROP_RATE = 1 / 400;
-      const clears = (player.activities && player.activities["The Corrupted Gauntlet"])
+      const DROPPED_AT = 793; // clears at which the item actually dropped
+      const liveClears = (player.activities && player.activities["The Corrupted Gauntlet"])
         ? player.activities["The Corrupted Gauntlet"].score : 0;
+      const hasDropped = liveClears >= DROPPED_AT;
+      // Once the item's dropped, freeze all the drought math at the clear
+      // count it actually happened on - further clears after that point
+      // aren't part of "how long was the drought," they're just more KC.
+      const clears = hasDropped ? DROPPED_AT : liveClears;
 
-      const survivalProb = Math.pow(1 - DROP_RATE, clears); // chance of STILL being dry
+      const survivalProb = Math.pow(1 - DROP_RATE, clears); // chance of going this long with no drop
       const luckPct = survivalProb * 100;
       const expected = Math.round(1 / DROP_RATE);
       const overExpected = (clears / expected);
@@ -765,29 +771,50 @@
         '<path d="' + d + '" fill="none" stroke="#4f8ef0" stroke-width="2.5"/>' +
         '<line x1="' + curX.toFixed(1) + '" y1="' + MT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - MB) + '" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3,3"/>' +
         '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
-        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' clears</text>' +
+        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' clears' + (hasDropped ? " (finally dropped!)" : "") + '</text>' +
         refLabels +
         '<text x="' + (W - MR) + '" y="' + (H - MB - 8) + '" text-anchor="end" font-size="11" fill="var(--text-dim)">at ' + fmt(xMax) + ' clears: ~1 in ' + fmt(Math.round(1 / Math.pow(1 - DROP_RATE, xMax))) + ' still dry</text>' +
         '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Corrupted Gauntlet clears →</text>' +
         '</svg>';
 
+      const heroTitle = hasDropped
+        ? "5JV finally got the drop! 🎉"
+        : "5JV's Corrupted Gauntlet drought";
+      const heroSub = hasDropped
+        ? "Chased a 1-in-400 unique for " + fmt(DROPPED_AT) + " clears before it finally dropped."
+        : "Chasing a 1-in-400 unique. No drop yet.";
+      const statLabel = hasDropped ? "Drought rarity" : "Still-dry probability";
+      const noteText = hasDropped
+        ? '"Drought rarity" is the chance, going in, of doing ' + fmt(clears) +
+          ' Corrupted Gauntlet clears at a 1/400 drop rate and getting <em>nothing</em> the whole way - which is exactly what happened before it dropped on clear ' + fmt(DROPPED_AT) + '. At ' + luckPct.toFixed(1) +
+          '%, roughly ' + Math.round(luckPct) + ' out of every 100 players would still have been waiting at that point too.'
+        : '"Still-dry probability" is the chance, going in, of doing ' + fmt(clears) +
+          ' Corrupted Gauntlet clears at a 1/400 drop rate and getting <em>nothing</em>. At ' + luckPct.toFixed(1) +
+          '%, roughly ' + Math.round(luckPct) + ' out of every 100 players attempting this many clears would still be waiting — everyone else would\'ve already got it.';
+      const chartHeading = hasDropped ? "How rare was that drought, really?" : "How rare is this drought, really?";
+      const chartSub = hasDropped
+        ? "The blue line shows the probability of still not having the drop after N clears. Dashed lines mark real-world odds for comparison — the drop finally came on clear " + fmt(DROPPED_AT) + ", marked in red."
+        : "The blue line is the probability of still not having the drop after N clears. Dashed lines mark real-world odds for comparison — where the blue line crosses one, that's how many clears it'd take for the drought itself to be that rare.";
+      const liveNote = hasDropped && liveClears > DROPPED_AT
+        ? '<div class="luck-note" style="margin-top:4px">Since then: ' + fmt(liveClears - DROPPED_AT) + ' more clears (total ' + fmt(liveClears) + ').</div>'
+        : "";
+
       content.innerHTML =
         '<div class="luck-wrap">' +
         '<div class="luck-hero">' +
-        '<h2>5JV\'s Corrupted Gauntlet drought</h2>' +
-        '<div class="lh-sub">Chasing a 1-in-400 unique. No drop yet.</div>' +
+        '<h2>' + heroTitle + '</h2>' +
+        '<div class="lh-sub">' + heroSub + '</div>' +
         '<div class="luck-stats">' +
         '<div class="luck-stat"><div class="ls-num">' + fmt(clears) + '</div><div class="ls-label">Clears</div></div>' +
-        '<div class="luck-stat hot"><div class="ls-num">' + luckPct.toFixed(1) + '%</div><div class="ls-label">Still-dry probability</div></div>' +
+        '<div class="luck-stat hot"><div class="ls-num">' + luckPct.toFixed(1) + '%</div><div class="ls-label">' + statLabel + '</div></div>' +
         '<div class="luck-stat mid"><div class="ls-num">' + overExpected.toFixed(2) + '×</div><div class="ls-label">Past expected (' + fmt(expected) + ')</div></div>' +
         '</div>' +
-        '<div class="luck-note">"Still-dry probability" is the chance, going in, of doing ' + fmt(clears) +
-        ' Corrupted Gauntlet clears at a 1/400 drop rate and getting <em>nothing</em>. At ' + luckPct.toFixed(1) +
-        '%, roughly ' + Math.round(luckPct) + ' out of every 100 players attempting this many clears would still be waiting — everyone else would\'ve already got it.</div>' +
+        '<div class="luck-note">' + noteText + '</div>' +
+        liveNote +
         '</div>' +
         '<div class="luck-chart-wrap">' +
-        '<h3>How rare is this drought, really?</h3>' +
-        '<div class="lc-sub">The blue line is the probability of still not having the drop after N clears. Dashed lines mark real-world odds for comparison — where the blue line crosses one, that\'s how many clears it\'d take for the drought itself to be that rare.</div>' +
+        '<h3>' + chartHeading + '</h3>' +
+        '<div class="lc-sub">' + chartSub + '</div>' +
         svg +
         '</div>' +
         '</div>';
