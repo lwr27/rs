@@ -201,6 +201,7 @@
     padding: 8px 18px; border-radius: 6px; cursor: pointer;
   }
   .tab-btn.active { color: var(--text); border-color: var(--accent); background: var(--cell); }
+  .tab-tick { color: #7bd88f; font-weight: 800; margin-left: 2px; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
@@ -244,7 +245,8 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="skills">Skills</button>
-    <button class="tab-btn" data-tab="luck">Corrupted Gauntlet</button>
+    <button class="tab-btn" data-tab="luck">Corrupted Gauntlet <span class="tab-tick">✓</span></button>
+    <button class="tab-btn" data-tab="rangerluck">Ranger Boots</button>
   </div>
 
   <div class="tab-panel active" id="panel-skills">
@@ -253,6 +255,10 @@
 
   <div class="tab-panel" id="panel-luck">
     <div id="luckContent"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-rangerluck">
+    <div id="rangerLuckContent"></div>
   </div>
 
   <script>
@@ -820,6 +826,119 @@
         '</div>';
     }
 
+    function renderRangerLuck(players) {
+      const content = document.getElementById("rangerLuckContent");
+      const player = players.find(p => p.username === "5JV") || players[0];
+      if (!player) { content.innerHTML = ""; return; }
+
+      // Verified against the OSRS Wiki (citing Jagex's own stated drop rate):
+      // ranger boots are 1/1,133 per reward roll, and a medium clue casket
+      // gives 3-5 rolls (average 4) - giving an effective ~1/283.6 per clue.
+      const DROP_RATE = 1 / 283.6;
+      const clears = (player.activities && player.activities["Clue Scrolls (medium)"])
+        ? player.activities["Clue Scrolls (medium)"].score : 0;
+
+      const survivalProb = Math.pow(1 - DROP_RATE, clears);
+      const luckPct = survivalProb * 100;
+      const expected = Math.round(1 / DROP_RATE);
+      const overExpected = (clears / expected);
+
+      // Same dealer's-choice reference set as the Gauntlet page, trimmed to
+      // the four that land within a tighter, more relevant range for this
+      // much higher drop rate.
+      const REFS = [
+        { label: "Two people in a room of 23 sharing a birthday", p: 0.507, color: "#7bd88f" },
+        { label: "Being naturally left-handed", p: 0.10, color: "#5fd0c0" },
+        { label: "Having naturally red hair", p: 0.02, color: "#c084fc" },
+        { label: "Being dealt pocket aces in Texas Hold'em", p: 1 / 221, color: "#4f8ef0" },
+      ];
+      const lnKeep = Math.log(1 - DROP_RATE);
+      REFS.forEach(r => { r.n = Math.log(r.p) / lnKeep; });
+
+      const xMax = 1600;
+      const minProb = Math.pow(1 - DROP_RATE, xMax) / 1.5;
+
+      const W = 900, H = 460, ML = 92, MR = 24, MT = 20, MB = 46;
+      const plotW = W - ML - MR, plotH = H - MT - MB;
+      const xPix = n => ML + (n / xMax) * plotW;
+      const yPix = p => {
+        const clamped = Math.max(p, minProb);
+        return MT + (0 - Math.log10(clamped)) / (0 - Math.log10(minProb)) * plotH;
+      };
+
+      let d = "";
+      const steps = 240;
+      for (let i = 0; i <= steps; i++) {
+        const n = (xMax / steps) * i;
+        const p = Math.pow(1 - DROP_RATE, n);
+        const x = xPix(n), y = yPix(p);
+        d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1) + " ";
+      }
+
+      let refLines = "";
+      let refLabels = "";
+      REFS.forEach(r => {
+        const y = yPix(r.p);
+        refLines += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) +
+          '" stroke="' + r.color + '" stroke-width="1" stroke-dasharray="4,4" opacity="0.55"/>';
+        refLabels += '<text x="' + (W - MR - 6) + '" y="' + (y - 5).toFixed(1) +
+          '" text-anchor="end" font-size="12" fill="' + r.color + '">' + r.label +
+          ' (1 in ' + fmt(Math.round(1 / r.p)) + ') — ~' + fmt(Math.round(r.n)) + ' clues</text>';
+      });
+
+      const yTicks = [1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001];
+      let yAxis = "";
+      yTicks.forEach(t => {
+        if (t < minProb) return;
+        const y = yPix(t);
+        const label = t >= 1 ? "100%" : (t * 100).toLocaleString(undefined, { maximumSignificantDigits: 2 }) + "%";
+        yAxis += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (W - MR) + '" y2="' + y.toFixed(1) + '" stroke="var(--panel-border)" stroke-width="1"/>';
+        yAxis += '<text x="' + (ML - 10) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" font-size="11" fill="var(--text-faint)">' + label + '</text>';
+      });
+
+      const xTickCount = 6;
+      let xAxis = "";
+      for (let i = 0; i <= xTickCount; i++) {
+        const n = (xMax / xTickCount) * i;
+        const x = xPix(n);
+        xAxis += '<text x="' + x.toFixed(1) + '" y="' + (H - MB + 20) + '" text-anchor="middle" font-size="11" fill="var(--text-faint)">' + fmt(Math.round(n)) + '</text>';
+      }
+
+      const curX = xPix(clears), curY = yPix(Math.max(survivalProb, minProb));
+
+      const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' +
+        yAxis + xAxis + refLines +
+        '<path d="' + d + '" fill="none" stroke="#4f8ef0" stroke-width="2.5"/>' +
+        '<line x1="' + curX.toFixed(1) + '" y1="' + MT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - MB) + '" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3,3"/>' +
+        '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="6" fill="#ff6b6b" stroke="#0d1117" stroke-width="2"/>' +
+        '<text x="' + curX.toFixed(1) + '" y="' + (MT + 14) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#ff6b6b">5JV: ' + fmt(clears) + ' medium clues</text>' +
+        refLabels +
+        '<text x="' + (W - MR) + '" y="' + (H - MB - 8) + '" text-anchor="end" font-size="11" fill="var(--text-dim)">at ' + fmt(xMax) + ' clues: ~1 in ' + fmt(Math.round(1 / Math.pow(1 - DROP_RATE, xMax))) + ' still dry</text>' +
+        '<text x="' + (ML) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-faint)">Medium clues completed →</text>' +
+        '</svg>';
+
+      content.innerHTML =
+        '<div class="luck-wrap">' +
+        '<div class="luck-hero">' +
+        '<h2>5JV\'s Ranger Boots drought</h2>' +
+        '<div class="lh-sub">Chasing a ~1-in-283.6 medium clue unique. No drop yet.</div>' +
+        '<div class="luck-stats">' +
+        '<div class="luck-stat"><div class="ls-num">' + fmt(clears) + '</div><div class="ls-label">Medium clues</div></div>' +
+        '<div class="luck-stat hot"><div class="ls-num">' + luckPct.toFixed(1) + '%</div><div class="ls-label">Still-dry probability</div></div>' +
+        '<div class="luck-stat mid"><div class="ls-num">' + overExpected.toFixed(2) + '×</div><div class="ls-label">Past expected (' + fmt(expected) + ')</div></div>' +
+        '</div>' +
+        '<div class="luck-note">Ranger boots drop at 1/1,133 per reward roll, and a medium clue casket gives 3-5 rolls (avg. 4) - working out to roughly 1/283.6 per clue completed. "Still-dry probability" is the chance, going in, of doing ' + fmt(clears) +
+        ' medium clues and getting <em>nothing</em>. At ' + luckPct.toFixed(1) +
+        '%, roughly ' + Math.round(luckPct) + ' out of every 100 players attempting this many clues would still be waiting — everyone else would\'ve already got it.</div>' +
+        '</div>' +
+        '<div class="luck-chart-wrap">' +
+        '<h3>How rare is this drought, really?</h3>' +
+        '<div class="lc-sub">The blue line is the probability of still not having the drop after N medium clues. Dashed lines mark real-world odds for comparison — where the blue line crosses one, that\'s how many clues it\'d take for the drought itself to be that rare.</div>' +
+        svg +
+        '</div>' +
+        '</div>';
+    }
+
     function initTabs() {
       document.querySelectorAll(".tab-btn").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -854,6 +973,7 @@
 
       initTabs();
       renderGauntletLuck(data.players);
+      renderRangerLuck(data.players);
     }
 
     init();
