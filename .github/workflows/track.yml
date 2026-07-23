@@ -26,6 +26,7 @@ jobs:
           mkdir -p docs/data/snapshots
           cp data/latest.json docs/data/latest.json
           cp -r data/snapshots/. docs/data/snapshots/
+          if [ -f data/patch-notes.json ]; then cp data/patch-notes.json docs/data/patch-notes.json; fi
 
       - name: Commit updated data
         run: |
