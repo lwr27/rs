@@ -22,6 +22,7 @@
   body {
     font-family: 'Segoe UI', 'Trebuchet MS', Verdana, sans-serif;
     background: var(--bg);
+    background-image: radial-gradient(ellipse at top, var(--season-tint, transparent) 0%, transparent 60%);
     color: var(--text-dim);
     min-height: 100vh;
     padding: 12px;
@@ -91,6 +92,15 @@
   }
   .tile .num-top { left: 65.5%; top: 27.1%; }
   .tile .num-bot { left: 84.5%; top: 64.6%; }
+  .tile .num-virtual { color: #7dd3fc; }
+  .player-stats-strip {
+    display: flex; justify-content: center; gap: 28px;
+    margin: 10px auto 4px; max-width: 500px;
+  }
+  .pss-item { display: flex; flex-direction: column; align-items: center; }
+  .pss-label { color: var(--text-faint); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.4px; }
+  .pss-val { color: var(--text); font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .pss-val.odometer { color: var(--accent); }
   .tile .xp-bar {
     position: absolute;
     left: 4.8%;
@@ -127,7 +137,8 @@
   .kc-clue-head.expandable:hover { border-color: var(--accent); }
   .kc-caret { display: inline-block; width: 10px; color: var(--text-faint); font-size: 0.6rem; }
   .kc-clue-sub { display: none; flex-direction: column; gap: 2px; margin: 2px 0 2px 10px; }
-  .kc-clue-wrap.open .kc-clue-sub { display: flex; }
+  .kc-clue-wrap.open .kc-clue-sub, .kc-cat-wrap.open .kc-clue-sub { display: flex; }
+  .kc-cat-count { color: var(--text-faint); font-size: 0.65rem; }
   .kc-sub-row { background: transparent; border-color: transparent; padding: 2px 8px; font-size: 0.66rem; }
   .kc-sub-row .kc-name { text-transform: capitalize; color: var(--text-faint); }
 
@@ -294,10 +305,13 @@
     }
 
     // Standard OSRS xp-for-level table (levels 1-99)
+    // Extended to 126 (well past the highest realistic virtual level, e.g.
+    // 120 Slayer/Runecrafting territory) so getVirtualLevel below has real
+    // table entries to compare against instead of extrapolating.
     const XP_TABLE = (() => {
       const table = [0, 0];
       let total = 0;
-      for (let lvl = 1; lvl < 99; lvl++) {
+      for (let lvl = 1; lvl < 126; lvl++) {
         total += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
         table.push(Math.floor(total / 4));
       }
@@ -309,6 +323,13 @@
       const next = XP_TABLE[level + 1] || cur + 1;
       return Math.max(0, Math.min(1, (xp - cur) / (next - cur)));
     }
+    // Virtual level: the level the XP formula implies past the 99 display
+    // cap, e.g. a Slayer grinder sitting on enough XP for "124".
+    function getVirtualLevel(xp) {
+      let lvl = 99;
+      while (lvl < XP_TABLE.length - 1 && xp >= XP_TABLE[lvl + 1]) lvl++;
+      return lvl;
+    }
 
     async function loadHistory(username) {
       const safe = username.toLowerCase().replace(/[^a-z0-9_-]/g, "");
@@ -319,14 +340,41 @@
       } catch { return null; }
     }
 
+    // Standard OSRS combat level formula, verified against the OSRS Wiki:
+    // base = 0.25 * (Def + HP + floor(Prayer/2))
+    // combat = floor(base + max(melee, ranged, magic))
+    function computeCombatLevel(stats) {
+      const lvl = sk => (stats[sk] && stats[sk].level) || 1;
+      const base = 0.25 * (lvl("Defence") + lvl("Hitpoints") + Math.floor(lvl("Prayer") / 2));
+      const melee = 0.325 * (lvl("Attack") + lvl("Strength"));
+      const ranged = 0.325 * Math.floor(lvl("Ranged") * 1.5);
+      const magic = 0.325 * Math.floor(lvl("Magic") * 1.5);
+      return Math.floor(base + Math.max(melee, ranged, magic));
+    }
+
+    // Animates a number counting up from 0 to its target on first render,
+    // easing out near the end rather than a linear tick.
+    function animateOdometer(el, target, duration) {
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        el.textContent = fmt(Math.round(target * eased));
+        if (t < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
     function buildTooltip(skill, data) {
       const rankText = data.rank > 0 ? fmt(data.rank) : "Unranked";
       const pct = Math.round(progressToNextLevel(data.level, data.xp) * 100);
+      const vLevel = data.level >= 99 ? getVirtualLevel(data.xp) : null;
       return '<div class="th">' + skill + '</div>' +
         '<div class="tr"><span>Level</span><span>' + data.level + '</span></div>' +
+        (vLevel && vLevel > 99 ? '<div class="tr"><span>Virtual</span><span>' + vLevel + '</span></div>' : '') +
         '<div class="tr"><span>XP</span><span>' + fmt(data.xp) + '</span></div>' +
         '<div class="tr"><span>Rank</span><span>' + rankText + '</span></div>' +
-        '<div class="tr"><span>Next level</span><span>' + pct + '%</span></div>';
+        (data.level < 99 ? '<div class="tr"><span>Next level</span><span>' + pct + '%</span></div>' : '');
     }
 
     function renderColumn(player, history) {
@@ -368,8 +416,14 @@
               '%; background: hsl(' + hue + ', 100%, 50%)"></div>';
           }
 
+          // For maxed skills, show the virtual level (past the 99 display
+          // cap) on top instead of duplicating 99 - the real cap still
+          // shows on the bottom number.
+          const topLabel = data.level >= 99 ? getVirtualLevel(data.xp) : data.level;
+          const topClass = (data.level >= 99 && topLabel > 99) ? "slevel num-top num-virtual" : "slevel num-top";
+
           tile.innerHTML =
-            '<span class="slevel num-top">' + data.level + '</span>' +
+            '<span class="' + topClass + '">' + topLabel + '</span>' +
             '<span class="slevel num-bot">' + data.level + '</span>' +
             barHtml +
             '<div class="tooltip">' + buildTooltip(skill, data) + '</div>';
@@ -384,6 +438,17 @@
 
       col.appendChild(panel);
 
+      // Combat level + total XP odometer strip
+      const combatLevel = computeCombatLevel(player.stats);
+      const totalXp = (player.stats.Overall && player.stats.Overall.xp) || 0;
+      const statsStrip = document.createElement("div");
+      statsStrip.className = "player-stats-strip";
+      statsStrip.innerHTML =
+        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val">' + combatLevel + '</span></div>' +
+        '<div class="pss-item"><span class="pss-label">Total XP</span><span class="pss-val odometer">0</span></div>';
+      col.appendChild(statsStrip);
+      animateOdometer(statsStrip.querySelector(".odometer"), totalXp, 1200);
+
       // Boss / clue killcount panel
       if (player.activities && Object.keys(player.activities).length) {
         const kcLabel = document.createElement("div");
@@ -394,63 +459,126 @@
         const kcList = document.createElement("div");
         kcList.className = "kc-list";
 
-        // Individual clue tiers get folded under "Clue Scrolls (all)" as an
-        // expandable sub-list, rather than cluttering the main sorted list.
         const CLUE_TIERS = ["Clue Scrolls (beginner)", "Clue Scrolls (easy)",
           "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
           "Clue Scrolls (master)"];
-        const isClueTier = name => CLUE_TIERS.indexOf(name) !== -1;
 
+        // Verified against the exact ACTIVITIES list in track.js - every
+        // non-clue, non-Grid/League/Deadman-Points activity is assigned to
+        // exactly one of these groups (checked programmatically, no gaps
+        // or duplicates against the live 80-entry list).
+        const CATEGORIES = {
+          "Raids": ["Chambers of Xeric", "Chambers of Xeric: Challenge Mode", "Theatre of Blood",
+            "Theatre of Blood: Hard Mode", "Tombs of Amascut", "Tombs of Amascut: Expert Mode"],
+          "God Wars Dungeon": ["Commander Zilyana", "General Graardor", "Kree'Arra", "K'ril Tsutsaroth",
+            "Kalphite Queen", "Nex"],
+          "Wilderness": ["Callisto", "Artio", "Vet'ion", "Cal'varion", "Venenatis", "Spindel",
+            "Chaos Elemental", "Chaos Fanatic", "Crazy Archaeologist", "Scorpia", "King Black Dragon"],
+          "Slayer & solo bosses": ["Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor", "Brutus",
+            "Bryophyta", "Cerberus", "Corporeal Beast", "Dagannoth Prime", "Dagannoth Rex",
+            "Dagannoth Supreme", "Deranged Archaeologist", "Doom of Mokhaiotl", "Duke Sucellus",
+            "Giant Mole", "Grotesque Guardians", "Hespori", "Kraken", "Mimic", "Nightmare",
+            "Phosani's Nightmare", "Obor", "Phantom Muspah", "Gemstone Crab", "Sarachnis", "Scurrius",
+            "Shellbane Gryphon", "Skotizo", "Sol Heredit", "The Gauntlet", "The Corrupted Gauntlet",
+            "The Hueycoatl", "The Leviathan", "The Royal Titans", "The Whisperer",
+            "Thermonuclear Smoke Devil", "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Vorkath", "Yama",
+            "Zalcano", "Zulrah"],
+          "Misc & minigames": ["Barrows Chests", "Wintertodt", "Tempoross", "Lunar Chests",
+            "Colosseum Glory", "Collections Logged", "Rifts closed", "LMS - Rank", "PvP Arena - Rank",
+            "Soul Wars Zeal", "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
+            "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue"],
+        };
+        const categorized = new Set(Object.values(CATEGORIES).flat());
+
+        // Clue Scrolls (all) row, with tiers folded in as an expandable sub-list.
+        const clueData = player.activities["Clue Scrolls (all)"];
+        if (clueData && clueData.score > 0) {
+          const tiers = CLUE_TIERS
+            .map(t => [t, player.activities[t]])
+            .filter(([, d]) => d && d.score > 0);
+
+          const wrap = document.createElement("div");
+          wrap.className = "kc-clue-wrap";
+          const row = document.createElement("div");
+          row.className = "kc-row kc-clue-head" + (tiers.length ? " expandable" : "");
+          row.innerHTML =
+            '<span class="kc-name">' + (tiers.length ? '<span class="kc-caret">▸</span> ' : '') +
+            'Clue Scrolls (all)</span>' +
+            '<span class="kc-score">' + fmt(clueData.score) + '</span>';
+          wrap.appendChild(row);
+          if (tiers.length) {
+            const sub = document.createElement("div");
+            sub.className = "kc-clue-sub";
+            tiers.forEach(([tname, tdata]) => {
+              const label = tname.replace("Clue Scrolls (", "").replace(")", "");
+              const srow = document.createElement("div");
+              srow.className = "kc-row kc-sub-row";
+              srow.innerHTML = '<span class="kc-name">' + label + '</span>' +
+                '<span class="kc-score">' + fmt(tdata.score) + '</span>';
+              sub.appendChild(srow);
+            });
+            wrap.appendChild(sub);
+            row.addEventListener("click", () => {
+              const open = wrap.classList.toggle("open");
+              row.querySelector(".kc-caret").textContent = open ? "▾" : "▸";
+            });
+          }
+          kcList.appendChild(wrap);
+        }
+
+        // Boss categories, each an expandable group sorted by score
+        // internally, categories skipped entirely if nothing in them.
+        Object.entries(CATEGORIES).forEach(([catName, items]) => {
+          const entries = items
+            .map(name => [name, player.activities[name]])
+            .filter(([, d]) => d && d.score > 0)
+            .sort((a, b) => b[1].score - a[1].score);
+          if (!entries.length) return;
+
+          const catTotal = entries.reduce((sum, [, d]) => sum + d.score, 0);
+          const wrap = document.createElement("div");
+          wrap.className = "kc-cat-wrap";
+          const row = document.createElement("div");
+          row.className = "kc-row kc-cat-head expandable";
+          row.innerHTML =
+            '<span class="kc-name"><span class="kc-caret">▸</span> ' + catName +
+            ' <span class="kc-cat-count">(' + entries.length + ')</span></span>' +
+            '<span class="kc-score">' + fmt(catTotal) + '</span>';
+          wrap.appendChild(row);
+
+          const sub = document.createElement("div");
+          sub.className = "kc-clue-sub";
+          entries.forEach(([name, d]) => {
+            const srow = document.createElement("div");
+            srow.className = "kc-row kc-sub-row";
+            srow.innerHTML = '<span class="kc-name">' + name + '</span>' +
+              '<span class="kc-score">' + fmt(d.score) + '</span>';
+            sub.appendChild(srow);
+          });
+          wrap.appendChild(sub);
+          row.addEventListener("click", () => {
+            const open = wrap.classList.toggle("open");
+            row.querySelector(".kc-caret").textContent = open ? "▾" : "▸";
+          });
+          kcList.appendChild(wrap);
+        });
+
+        // Anything not covered by a category or the clue system (shouldn't
+        // normally happen given the full-coverage check above, but keeps
+        // the list complete rather than silently dropping an entry if the
+        // activity list is ever extended without updating CATEGORIES).
         Object.entries(player.activities)
-          .filter(([name]) => !isClueTier(name))
+          .filter(([name, d]) => d.score > 0 && name !== "Clue Scrolls (all)" &&
+            CLUE_TIERS.indexOf(name) === -1 && !categorized.has(name))
           .sort((a, b) => b[1].score - a[1].score)
           .forEach(([name, data]) => {
-            if (name === "Clue Scrolls (all)") {
-              // Expandable parent row + nested tier breakdown
-              const tiers = CLUE_TIERS
-                .map(t => [t, player.activities[t]])
-                .filter(([, d]) => d && d.score > 0);
-
-              const wrap = document.createElement("div");
-              wrap.className = "kc-clue-wrap";
-
-              const row = document.createElement("div");
-              row.className = "kc-row kc-clue-head" + (tiers.length ? " expandable" : "");
-              row.innerHTML =
-                '<span class="kc-name">' +
-                (tiers.length ? '<span class="kc-caret">▸</span> ' : '') +
-                'Clue Scrolls (all)</span>' +
-                '<span class="kc-score">' + fmt(data.score) + '</span>';
-              wrap.appendChild(row);
-
-              if (tiers.length) {
-                const sub = document.createElement("div");
-                sub.className = "kc-clue-sub";
-                tiers.forEach(([tname, tdata]) => {
-                  const label = tname.replace("Clue Scrolls (", "").replace(")", "");
-                  const srow = document.createElement("div");
-                  srow.className = "kc-row kc-sub-row";
-                  srow.innerHTML =
-                    '<span class="kc-name">' + label + '</span>' +
-                    '<span class="kc-score">' + fmt(tdata.score) + '</span>';
-                  sub.appendChild(srow);
-                });
-                wrap.appendChild(sub);
-                row.addEventListener("click", () => {
-                  const open = wrap.classList.toggle("open");
-                  row.querySelector(".kc-caret").textContent = open ? "▾" : "▸";
-                });
-              }
-              kcList.appendChild(wrap);
-            } else {
-              const row = document.createElement("div");
-              row.className = "kc-row";
-              row.innerHTML =
-                '<span class="kc-name">' + name + '</span>' +
-                '<span class="kc-score">' + fmt(data.score) + '</span>';
-              kcList.appendChild(row);
-            }
+            const row = document.createElement("div");
+            row.className = "kc-row";
+            row.innerHTML = '<span class="kc-name">' + name + '</span>' +
+              '<span class="kc-score">' + fmt(data.score) + '</span>';
+            kcList.appendChild(row);
           });
+
         col.appendChild(kcList);
       }
 
@@ -949,6 +1077,22 @@
         });
       });
     }
+
+    // Very subtle seasonal tint - a faint colour shift in the background
+    // gradient, nothing animated or attention-grabbing.
+    (function setSeasonTint() {
+      const month = new Date().getMonth(); // 0=Jan
+      const tints = {
+        winter: "rgba(79,142,240,0.05)",   // Dec/Jan/Feb - cool blue
+        spring: "rgba(123,216,143,0.04)",  // Mar/Apr/May - soft green
+        summer: "rgba(255,210,79,0.035)",  // Jun/Jul/Aug - warm gold
+        autumn: "rgba(255,159,67,0.045)",  // Sep/Oct/Nov - amber
+      };
+      const season = [11, 0, 1].includes(month) ? "winter"
+        : [2, 3, 4].includes(month) ? "spring"
+        : [5, 6, 7].includes(month) ? "summer" : "autumn";
+      document.documentElement.style.setProperty("--season-tint", tints[season]);
+    })();
 
     async function init() {
       let data;
