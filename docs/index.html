@@ -40,6 +40,20 @@
   header h1 { color: var(--text); font-size: 1.3rem; font-weight: 600; }
   header .updated { color: var(--text-faint); font-size: 0.8rem; }
 
+  .patch-banner {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 8px 14px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    font-size: 0.8rem;
+  }
+  .patch-banner .pb-tag {
+    color: var(--accent); font-weight: 700; font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0;
+  }
+  .patch-banner a { color: var(--text); text-decoration: none; }
+  .patch-banner a:hover { text-decoration: underline; }
+  .patch-banner .pb-date { color: var(--text-faint); font-size: 0.7rem; flex-shrink: 0; }
+
   .board {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -253,6 +267,8 @@
     <h1>OSRS XP tracker</h1>
     <span class="updated" id="updated">Loading...</span>
   </header>
+
+  <div id="patchNoteBanner"></div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="skills">Skills</button>
@@ -1094,6 +1110,32 @@
       document.documentElement.style.setProperty("--season-tint", tints[season]);
     })();
 
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    async function renderPatchNotes() {
+      const el = document.getElementById("patchNoteBanner");
+      try {
+        const res = await fetch("data/patch-notes.json?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return;
+        const note = await res.json();
+        if (!note || !note.title) return;
+        const dateStr = note.pubDate ? new Date(note.pubDate).toLocaleDateString("en-US", {
+          month: "short", day: "numeric"
+        }) : "";
+        el.innerHTML = '<div class="patch-banner">' +
+          '<span class="pb-tag">Latest update</span>' +
+          '<a href="' + escapeHtml(note.link || "#") + '" target="_blank" rel="noopener">' + escapeHtml(note.title) + '</a>' +
+          (dateStr ? '<span class="pb-date">' + dateStr + '</span>' : '') +
+          '</div>';
+      } catch (err) {
+        console.error("Patch notes error:", err);
+      }
+    }
+
     async function init() {
       let data;
       try {
@@ -1118,6 +1160,7 @@
       initTabs();
       renderGauntletLuck(data.players);
       renderRangerLuck(data.players);
+      renderPatchNotes();
     }
 
     init();
