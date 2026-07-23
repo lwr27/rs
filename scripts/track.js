@@ -58,6 +58,7 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const SNAPSHOT_DIR = path.join(DATA_DIR, "snapshots");
 const PLAYERS_FILE = path.join(DATA_DIR, "players.json");
 const LATEST_FILE = path.join(DATA_DIR, "latest.json");
+const PATCH_NOTES_FILE = path.join(DATA_DIR, "patch-notes.json");
 
 function loadPlayers() {
   return JSON.parse(fs.readFileSync(PLAYERS_FILE, "utf8"));
@@ -236,6 +237,30 @@ function appendSnapshot(username, entry) {
   fs.writeFileSync(file, JSON.stringify(raw));
 }
 
+// Pulls the single latest item from the official OSRS news RSS feed. Uses
+// a small regex extraction rather than a full XML parser/dependency, since
+// we only need the first <item>'s title/link/date from a known, stable
+// feed format - not general-purpose XML parsing.
+async function fetchLatestPatchNote() {
+  try {
+    const res = await fetch("https://secure.runescape.com/m=news/latest_news.rss?oldschool=true");
+    if (!res.ok) return null;
+    const xml = await res.text();
+    const itemMatch = xml.match(/<item>([\s\S]*?)<\/item>/);
+    if (!itemMatch) return null;
+    const item = itemMatch[1];
+    const get = (tag) => {
+      const m = item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+      if (!m) return null;
+      return m[1].replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "").trim();
+    };
+    return { title: get("title"), link: get("link"), pubDate: get("pubDate"), category: get("category") };
+  } catch (err) {
+    console.error(`Patch notes fetch error: ${err.message}`);
+    return null;
+  }
+}
+
 async function main() {
   ensureSnapshotDir();
   const players = loadPlayers();
@@ -290,6 +315,12 @@ async function main() {
   }
 
   fs.writeFileSync(LATEST_FILE, JSON.stringify(latest));
+
+  const patchNote = await fetchLatestPatchNote();
+  if (patchNote) {
+    fs.writeFileSync(PATCH_NOTES_FILE, JSON.stringify(patchNote));
+  }
+
   await sendDiscordNotifications(notifications);
 }
 
