@@ -233,7 +233,7 @@ function appendSnapshot(username, entry) {
     raw.history = raw.history.slice(raw.history.length - MAX_ENTRIES);
   }
 
-  fs.writeFileSync(file, JSON.stringify(raw, null, 2));
+  fs.writeFileSync(file, JSON.stringify(raw));
 }
 
 async function main() {
@@ -289,7 +289,7 @@ async function main() {
     }
   }
 
-  fs.writeFileSync(LATEST_FILE, JSON.stringify(latest, null, 2));
+  fs.writeFileSync(LATEST_FILE, JSON.stringify(latest));
   await sendDiscordNotifications(notifications);
 }
 
