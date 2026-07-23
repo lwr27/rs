@@ -92,7 +92,7 @@
   }
   .tile .num-top { left: 65.5%; top: 27.1%; }
   .tile .num-bot { left: 84.5%; top: 64.6%; }
-  .tile .num-virtual { color: #7dd3fc; }
+  /* Virtual level numbers use the same plain yellow styling as regular levels. */
   .player-stats-strip {
     display: flex; justify-content: center; gap: 28px;
     margin: 10px auto 4px; max-width: 500px;
@@ -420,7 +420,7 @@
           // cap) on top instead of duplicating 99 - the real cap still
           // shows on the bottom number.
           const topLabel = data.level >= 99 ? getVirtualLevel(data.xp) : data.level;
-          const topClass = (data.level >= 99 && topLabel > 99) ? "slevel num-top num-virtual" : "slevel num-top";
+          const topClass = "slevel num-top";
 
           tile.innerHTML =
             '<span class="' + topClass + '">' + topLabel + '</span>' +
@@ -1083,10 +1083,10 @@
     (function setSeasonTint() {
       const month = new Date().getMonth(); // 0=Jan
       const tints = {
-        winter: "rgba(79,142,240,0.05)",   // Dec/Jan/Feb - cool blue
-        spring: "rgba(123,216,143,0.04)",  // Mar/Apr/May - soft green
-        summer: "rgba(255,210,79,0.035)",  // Jun/Jul/Aug - warm gold
-        autumn: "rgba(255,159,67,0.045)",  // Sep/Oct/Nov - amber
+        winter: "rgba(79,142,240,0.18)",   // Dec/Jan/Feb - cool blue
+        spring: "rgba(123,216,143,0.14)",  // Mar/Apr/May - soft green
+        summer: "rgba(255,210,79,0.13)",   // Jun/Jul/Aug - warm gold
+        autumn: "rgba(255,159,67,0.16)",   // Sep/Oct/Nov - amber
       };
       const season = [11, 0, 1].includes(month) ? "winter"
         : [2, 3, 4].includes(month) ? "spring"
