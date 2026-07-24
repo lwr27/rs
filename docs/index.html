@@ -1175,15 +1175,22 @@
     function renderTestMarker() {
       const container = document.getElementById("mapContainer");
       if (!container) return;
-      const { xPct, yPct } = gameToMapPercent(3221.5, 3217);
-      const dot = document.createElement("div");
-      dot.style.cssText =
-        "position:absolute; width:14px; height:14px; border-radius:50%; " +
-        "background:#ff3b3b; border:2px solid #fff; box-shadow:0 0 6px rgba(0,0,0,0.6); " +
-        "left:" + xPct.toFixed(3) + "%; top:" + yPct.toFixed(3) + "%; " +
-        "transform:translate(-50%,-50%); z-index:5;";
-      dot.title = "Lumbridge Home Teleport (test marker)";
-      container.appendChild(dot);
+      const points = [
+        { x: 3221.5, y: 3217, color: "#ff3b3b", label: "Lumbridge Home Teleport (calibration point)" },
+        { x: 3211.5, y: 3423.5, color: "#4f8ef0", label: "Varrock teleport landing (test)" },
+        { x: 2653.5, y: 2654.5, color: "#7bd88f", label: "Pest Control landing (test)" },
+      ];
+      points.forEach(pt => {
+        const { xPct, yPct } = gameToMapPercent(pt.x, pt.y);
+        const dot = document.createElement("div");
+        dot.style.cssText =
+          "position:absolute; width:14px; height:14px; border-radius:50%; " +
+          "background:" + pt.color + "; border:2px solid #fff; box-shadow:0 0 6px rgba(0,0,0,0.6); " +
+          "left:" + xPct.toFixed(3) + "%; top:" + yPct.toFixed(3) + "%; " +
+          "transform:translate(-50%,-50%); z-index:5;";
+        dot.title = pt.label;
+        container.appendChild(dot);
+      });
     }
 
     // Very subtle seasonal tint - a faint colour shift in the background
