@@ -292,10 +292,15 @@
     <div style="position:fixed; inset:0; z-index:1000; background:#000;">
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
       <span style="position:absolute; top:10px; left:10px; z-index:1001; color:var(--text-faint); font-size:0.75rem; background:var(--panel); padding:6px 10px; border-radius:6px; border:1px solid var(--panel-border);">Scroll wheel to zoom, drag/scroll to pan</span>
+      <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
+        <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
+        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶ Play</button>
+        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
+      </div>
       <div id="mapViewport" style="position:absolute; inset:0; overflow:auto;">
         <div id="mapContainer" style="position:relative; width:100%; transform-origin: top left;">
           <img src="map/current-map-image-0.png" alt="World map" style="display:block; width:100%; height:auto;" />
-          <svg id="routeOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
+          <svg id="routeOverlay" viewBox="0 0 6528 22784" preserveAspectRatio="none" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
         </div>
       </div>
     </div>
@@ -1119,6 +1124,23 @@
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
       document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
       document.getElementById("panel-map").classList.add("active");
+      // The full image includes a large block of unrelated instance/dungeon
+      // content above the real mainland - default to a sensible zoom level
+      // centered on Lumbridge rather than opening scrolled to the top-left.
+      requestAnimationFrame(() => {
+        mapZoomLevel = 3;
+        applyMapZoom();
+        setTimeout(() => {
+          const viewport = document.getElementById("mapViewport");
+          const container = document.getElementById("mapContainer");
+          if (!viewport || !container) return;
+          const { xPct, yPct } = gameToMapPercent(3221.5, 3217);
+          const targetX = (xPct / 100) * container.scrollWidth;
+          const targetY = (yPct / 100) * container.scrollHeight;
+          viewport.scrollLeft = targetX - viewport.clientWidth / 2;
+          viewport.scrollTop = targetY - viewport.clientHeight / 2;
+        }, 0);
+      });
     }
 
     // Game-coordinate -> map-image pixel calibration, derived from two
@@ -1136,6 +1158,15 @@
       const px = MAP_X_ORIGIN + MAP_X_SCALE * gameX;
       const py = MAP_Y_ORIGIN - MAP_Y_SCALE * gameY;
       return { xPct: (px / MAP_IMG_W) * 100, yPct: (py / MAP_IMG_H) * 100 };
+    }
+    // Pixel-space version for SVG drawing, where the viewBox matches the
+    // image's real dimensions (6528x22784) rather than a distorting 0-100
+    // square - keeps circles circular and lines correctly proportioned.
+    function gameToMapPixels(gameX, gameY) {
+      return {
+        x: MAP_X_ORIGIN + MAP_X_SCALE * gameX,
+        y: MAP_Y_ORIGIN - MAP_Y_SCALE * gameY
+      };
     }
 
     // Map zoom: scales #mapContainer via CSS transform-driven width, while
@@ -1214,12 +1245,12 @@
     ];
 
     // Draws every event across the given sessions onto #routeOverlay as an
-    // SVG path. Walks render as solid lines (real ground movement); teleports
-    // render as dashed lines (not a real path, just a jump) plus a small
-    // circle at the origin point. The overlay's viewBox is 0-100 (percent
-    // space), matching gameToMapPercent's output directly, so it stays in
-    // sync automatically as the map is zoomed/panned/resized - no separate
-    // pixel math needed here.
+    // SVG path, in real pixel space matching the viewBox (6528x22784) - this
+    // keeps circles circular and lines correctly proportioned, unlike the
+    // earlier 0-100 percent-space version which distorted badly against
+    // this image's extreme aspect ratio. Walks render as solid lines (real
+    // ground movement); teleports render as dashed lines (not a real path,
+    // just a jump) plus a small circle at the origin point.
     function renderSessionPath(sessions) {
       const svg = document.getElementById("routeOverlay");
       if (!svg) return;
@@ -1227,35 +1258,126 @@
 
       const WALK_COLOR = "#4f8ef0";
       const TP_COLOR = "#ff9f43";
+      const STROKE_W = 12;   // pixels, in the 6528-wide image's own coordinate space
+      const DOT_R = 24;
 
       sessions.forEach(session => {
         session.events.forEach(ev => {
-          const from = gameToMapPercent(ev.f[0], ev.f[1]);
-          const to = gameToMapPercent(ev.t[0], ev.t[1]);
+          const from = gameToMapPixels(ev.f[0], ev.f[1]);
+          const to = gameToMapPixels(ev.t[0], ev.t[1]);
           const isWalk = ev.ty === "walk";
 
           const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("x1", from.xPct.toFixed(3));
-          line.setAttribute("y1", from.yPct.toFixed(3));
-          line.setAttribute("x2", to.xPct.toFixed(3));
-          line.setAttribute("y2", to.yPct.toFixed(3));
+          line.setAttribute("x1", from.x.toFixed(1));
+          line.setAttribute("y1", from.y.toFixed(1));
+          line.setAttribute("x2", to.x.toFixed(1));
+          line.setAttribute("y2", to.y.toFixed(1));
           line.setAttribute("stroke", isWalk ? WALK_COLOR : TP_COLOR);
-          line.setAttribute("stroke-width", "0.15");
-          line.setAttribute("vector-effect", "non-scaling-stroke");
-          if (!isWalk) line.setAttribute("stroke-dasharray", "1,1");
+          line.setAttribute("stroke-width", STROKE_W);
+          if (!isWalk) line.setAttribute("stroke-dasharray", (STROKE_W * 6) + "," + (STROKE_W * 4));
           svg.appendChild(line);
 
           // Small circle at the teleport's origin point, marking a jump
           // start distinct from ordinary ground movement.
           if (!isWalk) {
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("cx", from.xPct.toFixed(3));
-            circle.setAttribute("cy", from.yPct.toFixed(3));
-            circle.setAttribute("r", "0.3");
+            circle.setAttribute("cx", from.x.toFixed(1));
+            circle.setAttribute("cy", from.y.toFixed(1));
+            circle.setAttribute("r", DOT_R);
             circle.setAttribute("fill", TP_COLOR);
             svg.appendChild(circle);
           }
         });
+      });
+    }
+
+    // Populates the session dropdown from the given list, showing a
+    // human-readable start time + duration for each so sessions are easy
+    // to tell apart once there are many.
+    function populateSessionSelect(sessions) {
+      const select = document.getElementById("sessionSelect");
+      if (!select) return;
+      select.innerHTML = "";
+      sessions.forEach((session, i) => {
+        const opt = document.createElement("option");
+        opt.value = i;
+        const startDate = new Date(session.start * 1000);
+        const durationMin = Math.round((session.end - session.start) / 60);
+        opt.textContent = startDate.toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+        }) + " (" + durationMin + "m)";
+        select.appendChild(opt);
+      });
+    }
+
+    // Plays back the selected session: an animated marker moves along each
+    // event's line in sequence. Real session duration is compressed to a
+    // fixed on-screen playback time (rather than played at real speed,
+    // which for a walk-heavy session could take many real minutes) while
+    // keeping each event's relative share of that time proportional to how
+    // long it actually took.
+    let playbackAnimationId = null;
+    function playSession(session) {
+      if (playbackAnimationId) cancelAnimationFrame(playbackAnimationId);
+
+      const svg = document.getElementById("routeOverlay");
+      const statusEl = document.getElementById("sessionStatus");
+      const existing = svg.querySelector("#playbackMarker");
+      if (existing) existing.remove();
+
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      marker.id = "playbackMarker";
+      marker.setAttribute("r", 30);
+      marker.setAttribute("fill", "#ff3b3b");
+      marker.setAttribute("stroke", "#fff");
+      marker.setAttribute("stroke-width", 6);
+      svg.appendChild(marker);
+
+      const PLAYBACK_MS = 6000; // total on-screen playback time, regardless of real duration
+      const totalRealSeconds = Math.max(1, session.end - session.start);
+
+      // Precompute each event's pixel start/end and its share of total time.
+      const segments = session.events.map(ev => {
+        const from = gameToMapPixels(ev.f[0], ev.f[1]);
+        const to = gameToMapPixels(ev.t[0], ev.t[1]);
+        const evStart = ev.s - session.start;
+        const evEnd = (ev.e || ev.s) - session.start;
+        return { from, to, startFrac: evStart / totalRealSeconds, endFrac: Math.max(evEnd / totalRealSeconds, evStart / totalRealSeconds + 0.01) };
+      });
+
+      const playbackStart = performance.now();
+      function tick(now) {
+        const elapsed = now - playbackStart;
+        const frac = Math.min(1, elapsed / PLAYBACK_MS);
+
+        const seg = segments.find(s => frac >= s.startFrac && frac <= s.endFrac) ||
+          segments[segments.length - 1];
+        const segFrac = Math.min(1, Math.max(0,
+          (frac - seg.startFrac) / Math.max(0.0001, seg.endFrac - seg.startFrac)));
+        const x = seg.from.x + (seg.to.x - seg.from.x) * segFrac;
+        const y = seg.from.y + (seg.to.y - seg.from.y) * segFrac;
+        marker.setAttribute("cx", x.toFixed(1));
+        marker.setAttribute("cy", y.toFixed(1));
+
+        if (statusEl) statusEl.textContent = Math.round(frac * 100) + "%";
+
+        if (frac < 1) {
+          playbackAnimationId = requestAnimationFrame(tick);
+        } else {
+          playbackAnimationId = null;
+          if (statusEl) statusEl.textContent = "Done";
+        }
+      }
+      playbackAnimationId = requestAnimationFrame(tick);
+    }
+
+    function initSessionControls(sessions) {
+      populateSessionSelect(sessions);
+      const playBtn = document.getElementById("sessionPlayBtn");
+      const select = document.getElementById("sessionSelect");
+      if (playBtn) playBtn.addEventListener("click", () => {
+        const idx = parseInt(select.value, 10);
+        if (!isNaN(idx) && sessions[idx]) playSession(sessions[idx]);
       });
     }
 
@@ -1329,6 +1451,7 @@
       renderTestMarker();
       initMapZoom();
       renderSessionPath(SAMPLE_SESSIONS);
+      initSessionControls(SAMPLE_SESSIONS);
     }
 
     init();
