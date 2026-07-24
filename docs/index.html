@@ -295,7 +295,10 @@
       <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
         <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
         <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
-        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶ Play</button>
+        <button id="stepBackBtn" class="tab-btn" style="padding:6px 10px;">⏮</button>
+        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶</button>
+        <button id="stepFwdBtn" class="tab-btn" style="padding:6px 10px;">⏭</button>
+        <input id="sessionScrubber" type="range" min="0" max="1000" value="0" style="width:180px;" />
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
       </div>
       <div id="mapViewport" style="position:absolute; inset:0; overflow:auto;">
@@ -1341,14 +1344,58 @@
     // keeping each event's relative share of that time proportional to how
     // long it actually took.
     let playbackAnimationId = null;
-    function playSession(session) {
-      if (playbackAnimationId) {
-        cancelAnimationFrame(playbackAnimationId);
-        playbackAnimationId = null;
-      }
+    // Holds the currently loaded playback's state (segments, seekTo, timing)
+    // so the transport controls (play/pause, step back/forward, scrubber)
+    // can all act on it independently of whichever function loaded it.
+    let activePlayback = null;
+    let lastFrameTime = null;
 
+    // The single animation loop for playback, started once and left running
+    // for the lifetime of the page - it simply does nothing when there's no
+    // active playback or it's paused, rather than being torn down and
+    // recreated on every play/pause/resume (which was the source of the
+    // earlier duplicated-tick bugs).
+    function globalPlaybackTick(now) {
+      if (lastFrameTime === null) lastFrameTime = now;
+      const dt = now - lastFrameTime;
+      lastFrameTime = now;
+
+      if (activePlayback && !activePlayback.paused) {
+        activePlayback.elapsedMs = Math.min(
+          activePlayback.PLAYBACK_MS,
+          activePlayback.elapsedMs + dt
+        );
+        const frac = activePlayback.elapsedMs / activePlayback.PLAYBACK_MS;
+        activePlayback.seekTo(frac, false);
+        activePlayback.haloEl.setAttribute("r",
+          (24 + Math.sin(activePlayback.elapsedMs / 180) * 6).toFixed(1));
+
+        if (frac >= 1) {
+          activePlayback.paused = true;
+          setPlayButtonIcon(true);
+          const statusEl = document.getElementById("sessionStatus");
+          if (statusEl) statusEl.textContent = "Done";
+        }
+      }
+      requestAnimationFrame(globalPlaybackTick);
+    }
+    requestAnimationFrame(globalPlaybackTick);
+
+    function setPlayButtonIcon(showPlay) {
+      const btn = document.getElementById("sessionPlayBtn");
+      if (btn) btn.textContent = showPlay ? "▶" : "⏸";
+    }
+
+    // Loads a session for playback: builds the route segments, places the
+    // marker at the very start (paused), and points the camera there. Does
+    // NOT start playing automatically - call playPause() after, or let the
+    // Play button do it, so loading a session and pressing play are
+    // separate, restartable actions.
+    function loadSessionForPlayback(session) {
       const svg = document.getElementById("routeOverlay");
       const statusEl = document.getElementById("sessionStatus");
+      const scrubber = document.getElementById("sessionScrubber");
+      activePlayback = null;
       if (!svg) return;
       if (!session || !session.events || !session.events.length) {
         if (statusEl) statusEl.textContent = "No events";
@@ -1360,8 +1407,6 @@
       const existingHalo = svg.querySelector("#playbackHalo");
       if (existingHalo) existingHalo.remove();
 
-      // Soft halo behind the marker so it stays visible against busy map
-      // terrain when the camera is zoomed in close.
       const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       halo.id = "playbackHalo";
       halo.setAttribute("r", 26);
@@ -1381,11 +1426,6 @@
       const FOLLOW_ZOOM = 5;    // zoom level the camera snaps to when playback starts
       const FOLLOW_EASE = 0.12; // 0-1: how sharply the camera chases the marker
 
-      // Rebase the timeline to the actual first-event-start -> last-event-end
-      // span, not session.start/session.end - those can include dead time
-      // (e.g. time spent standing still before the first logged move), which
-      // would otherwise leave the marker sitting in the wrong place for the
-      // first stretch of playback before frac ever reaches the first event.
       const events = session.events.filter(ev =>
         ev && Array.isArray(ev.f) && Array.isArray(ev.t) &&
         ev.f.length >= 2 && ev.t.length >= 2 && typeof ev.s === "number");
@@ -1394,36 +1434,19 @@
         return;
       }
 
-      const firstEventStart = events[0].s;
-      const lastEvent = events[events.length - 1];
-      const lastEventEnd = lastEvent.e || lastEvent.s;
-      const totalRealSeconds = Math.max(1, lastEventEnd - firstEventStart);
-
-      // Precompute each event's pixel start/end and its share of total time.
-      // Segments are laid end-to-end across 0-1 rather than using raw
-      // timestamps for boundaries, so there are never gaps between segments
-      // for the lookup below to fall through.
+      // Segments are laid end-to-end across 0-1 (not raw timestamps), so
+      // there are never gaps for the lookup below to fall through.
       const segments = events.map((ev, i) => {
         const from = gameToMapPixels(ev.f[0], ev.f[1]);
         const to = gameToMapPixels(ev.t[0], ev.t[1]);
-        return {
-          from, to,
-          startFrac: i / events.length,
-          endFrac: (i + 1) / events.length
-        };
+        return { from, to, startFrac: i / events.length, endFrac: (i + 1) / events.length };
       });
 
-      // Camera: zoom in and jump straight to the route's starting point
-      // before the first frame, so playback opens tight on the player rather
-      // than wherever the map happened to be scrolled.
       const viewport = document.getElementById("mapViewport");
       const container = document.getElementById("mapContainer");
       mapZoomLevel = FOLLOW_ZOOM;
       applyMapZoom();
 
-      // Converts a point in the map image's own pixel space (6528x22784)
-      // into the scroll offsets that centre it in the viewport at the
-      // current zoom level.
       function scrollTargetFor(px, py) {
         const cw = container.scrollWidth, ch = container.scrollHeight;
         return {
@@ -1432,55 +1455,82 @@
         };
       }
 
-      if (viewport && container) {
-        const startTarget = scrollTargetFor(segments[0].from.x, segments[0].from.y);
-        viewport.scrollLeft = startTarget.left;
-        viewport.scrollTop = startTarget.top;
-      }
+      // Positions the marker/halo/camera for a given fraction (0-1) through
+      // the route. Shared by every control (play loop, scrubber, step
+      // buttons) so there's one source of truth for "where is the route at
+      // frac X" - nothing can drift out of sync with anything else.
+      function seekTo(frac, snapCamera) {
+        frac = Math.min(1, Math.max(0, frac));
+        const seg = segments[Math.min(segments.length - 1, Math.floor(frac * segments.length))];
+        const segFrac = Math.min(1, Math.max(0,
+          (frac - seg.startFrac) / Math.max(0.0001, seg.endFrac - seg.startFrac)));
+        const x = seg.from.x + (seg.to.x - seg.from.x) * segFrac;
+        const y = seg.from.y + (seg.to.y - seg.from.y) * segFrac;
+        marker.setAttribute("cx", x.toFixed(1));
+        marker.setAttribute("cy", y.toFixed(1));
+        halo.setAttribute("cx", x.toFixed(1));
+        halo.setAttribute("cy", y.toFixed(1));
 
-      const playbackStart = performance.now();
-      function tick(now) {
-        try {
-          const elapsed = now - playbackStart;
-          const frac = Math.min(1, Math.max(0, elapsed / PLAYBACK_MS));
-
-          let seg = segments[Math.min(segments.length - 1,
-            Math.floor(frac * segments.length))];
-          const segFrac = Math.min(1, Math.max(0,
-            (frac - seg.startFrac) / Math.max(0.0001, seg.endFrac - seg.startFrac)));
-          const x = seg.from.x + (seg.to.x - seg.from.x) * segFrac;
-          const y = seg.from.y + (seg.to.y - seg.from.y) * segFrac;
-          marker.setAttribute("cx", x.toFixed(1));
-          marker.setAttribute("cy", y.toFixed(1));
-          halo.setAttribute("cx", x.toFixed(1));
-          halo.setAttribute("cy", y.toFixed(1));
-          // Gentle pulse so the marker reads as "live" while moving.
-          halo.setAttribute("r", (24 + Math.sin(elapsed / 180) * 6).toFixed(1));
-
-          // Camera follow: ease the viewport toward the marker rather than
-          // snapping to it, so teleport jumps glide across the map instead
-          // of cutting instantly.
-          if (viewport && container) {
-            const target = scrollTargetFor(x, y);
+        if (viewport && container) {
+          const target = scrollTargetFor(x, y);
+          if (snapCamera) {
+            viewport.scrollLeft = target.left;
+            viewport.scrollTop = target.top;
+          } else {
             viewport.scrollLeft += (target.left - viewport.scrollLeft) * FOLLOW_EASE;
             viewport.scrollTop += (target.top - viewport.scrollTop) * FOLLOW_EASE;
           }
-
-          if (statusEl) statusEl.textContent = Math.round(frac * 100) + "%";
-
-          if (frac < 1) {
-            playbackAnimationId = requestAnimationFrame(tick);
-          } else {
-            playbackAnimationId = null;
-            if (statusEl) statusEl.textContent = "Done";
-          }
-        } catch (err) {
-          console.error("Session playback error:", err);
-          playbackAnimationId = null;
-          if (statusEl) statusEl.textContent = "Error";
         }
+        if (statusEl) statusEl.textContent = Math.round(frac * 100) + "%";
+        if (scrubber) scrubber.value = Math.round(frac * 1000);
       }
-      playbackAnimationId = requestAnimationFrame(tick);
+
+      activePlayback = {
+        PLAYBACK_MS, seekTo, segments,
+        elapsedMs: 0, paused: true, haloEl: halo
+      };
+      seekTo(0, true);
+      setPlayButtonIcon(true);
+    }
+
+    // Toggles play/pause on whatever session is currently loaded. If
+    // playback had already finished, pressing play again restarts from 0
+    // rather than doing nothing.
+    function playPause() {
+      if (!activePlayback) return;
+      if (activePlayback.elapsedMs >= activePlayback.PLAYBACK_MS) {
+        activePlayback.elapsedMs = 0;
+      }
+      activePlayback.paused = !activePlayback.paused;
+      lastFrameTime = null; // avoid a large dt jump from time spent paused
+      setPlayButtonIcon(activePlayback.paused);
+    }
+
+    // Steps to the previous/next event boundary and pauses there - useful
+    // for checking a specific teleport or walk segment precisely rather
+    // than scrubbing freehand.
+    function stepFrame(direction) {
+      if (!activePlayback) return;
+      activePlayback.paused = true;
+      setPlayButtonIcon(true);
+      const frac = activePlayback.elapsedMs / activePlayback.PLAYBACK_MS;
+      const segCount = activePlayback.segments.length;
+      const currentIndex = Math.min(segCount - 1, Math.floor(frac * segCount));
+      const targetIndex = Math.min(segCount - 1, Math.max(0, currentIndex + direction));
+      const targetFrac = direction > 0
+        ? activePlayback.segments[targetIndex].endFrac
+        : activePlayback.segments[targetIndex].startFrac;
+      activePlayback.elapsedMs = targetFrac * activePlayback.PLAYBACK_MS;
+      activePlayback.seekTo(targetFrac, true);
+    }
+
+    function playSession(session) {
+      loadSessionForPlayback(session);
+      if (activePlayback) {
+        activePlayback.paused = false;
+        lastFrameTime = null;
+        setPlayButtonIcon(false);
+      }
     }
 
     // Holds whichever player's sessions are currently loaded, so the Play
@@ -1498,6 +1548,8 @@
       const playerSelect = document.getElementById("playerSelect");
       const playBtn = document.getElementById("sessionPlayBtn");
       const sessionSelect = document.getElementById("sessionSelect");
+      const stepBackBtn = document.getElementById("stepBackBtn");
+      const stepFwdBtn = document.getElementById("stepFwdBtn");
 
       if (playerSelect) {
         playerSelect.innerHTML = "";
@@ -1513,10 +1565,42 @@
         });
       }
 
+      // Selecting a session loads it (paused, positioned at the start) but
+      // doesn't play automatically - the Play button starts/pauses it.
+      if (sessionSelect) {
+        sessionSelect.addEventListener("change", () => {
+          const idx = parseInt(sessionSelect.value, 10);
+          if (!isNaN(idx) && currentSessions[idx]) loadSessionForPlayback(currentSessions[idx]);
+        });
+      }
+
       if (playBtn) playBtn.addEventListener("click", () => {
-        const idx = parseInt(sessionSelect.value, 10);
-        if (!isNaN(idx) && currentSessions[idx]) playSession(currentSessions[idx]);
+        if (!activePlayback) {
+          const idx = parseInt(sessionSelect.value, 10);
+          if (!isNaN(idx) && currentSessions[idx]) playSession(currentSessions[idx]);
+          return;
+        }
+        playPause();
       });
+
+      if (stepBackBtn) stepBackBtn.addEventListener("click", () => stepFrame(-1));
+      if (stepFwdBtn) stepFwdBtn.addEventListener("click", () => stepFrame(1));
+
+      // The scrubber only needs to pause + seek on drag - the always-running
+      // global playback loop naturally continues from wherever elapsedMs
+      // ends up once paused is set back to false, so there's no separate
+      // resume logic needed here (unlike the earlier duplicated-tick version).
+      const scrubber = document.getElementById("sessionScrubber");
+      if (scrubber) {
+        scrubber.addEventListener("input", () => {
+          if (!activePlayback) return;
+          activePlayback.paused = true;
+          setPlayButtonIcon(true);
+          const frac = parseInt(scrubber.value, 10) / 1000;
+          activePlayback.elapsedMs = frac * activePlayback.PLAYBACK_MS;
+          activePlayback.seekTo(frac, true);
+        });
+      }
 
       // Load the first known player on open.
       if (ROUTE_PLAYERS.length) loadAndRenderPlayer(ROUTE_PLAYERS[0].hash);
