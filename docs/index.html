@@ -274,7 +274,6 @@
     <button class="tab-btn active" data-tab="skills">Skills</button>
     <button class="tab-btn" data-tab="luck">5JV: Corrupted Gauntlet <span class="tab-tick">✓</span></button>
     <button class="tab-btn" data-tab="rangerluck">6LR: Ranger Boots</button>
-    <button class="tab-btn" data-tab="map">Map</button>
   </div>
 
   <div class="tab-panel active" id="panel-skills">
@@ -461,13 +460,17 @@
 
       col.appendChild(panel);
 
-      // Combat level + total XP odometer strip
+      // Combat level + total XP odometer strip. The combat number is a
+      // deliberately unmarked entry point into the map panel - it calls
+      // showMapPanel() directly (there is no visible Map tab button in the
+      // DOM) and otherwise looks/behaves like a plain stat (cursor: default,
+      // no visual affordance that it's clickable).
       const combatLevel = computeCombatLevel(player.stats);
       const totalXp = (player.stats.Overall && player.stats.Overall.xp) || 0;
       const statsStrip = document.createElement("div");
       statsStrip.className = "player-stats-strip";
       statsStrip.innerHTML =
-        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val" style="cursor:default" onclick="document.querySelector(\'[data-tab=map]\').click()">' + combatLevel + '</span></div>' +
+        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val" style="cursor:default" onclick="showMapPanel()">' + combatLevel + '</span></div>' +
         '<div class="pss-item"><span class="pss-label">Total XP</span><span class="pss-val odometer">0</span></div>';
       col.appendChild(statsStrip);
       animateOdometer(statsStrip.querySelector(".odometer"), totalXp, 1200);
@@ -1099,6 +1102,16 @@
           document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
         });
       });
+    }
+
+    // Hidden entry point into the map panel, triggered only by clicking the
+    // Combat stat (see renderColumn). There is no visible tab button for
+    // this - it deactivates whichever tab is currently showing and reveals
+    // panel-map directly.
+    function showMapPanel() {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      document.getElementById("panel-map").classList.add("active");
     }
 
     // Very subtle seasonal tint - a faint colour shift in the background
