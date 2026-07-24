@@ -252,7 +252,15 @@ async function fetchLatestPatchNote() {
     const get = (tag) => {
       const m = item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
       if (!m) return null;
-      return m[1].replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "").trim();
+      return m[1]
+        .replace(/^<!\[CDATA\[/, "")
+        .replace(/\]\]>$/, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
     };
     return { title: get("title"), link: get("link"), pubDate: get("pubDate"), category: get("category") };
   } catch (err) {
