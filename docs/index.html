@@ -1334,16 +1334,28 @@
       svg.appendChild(marker);
 
       const PLAYBACK_MS = 6000; // total on-screen playback time, regardless of real duration
-      const totalRealSeconds = Math.max(1, session.end - session.start);
+
+      // Rebase the timeline to the actual first-event-start -> last-event-end
+      // span, not session.start/session.end - those can include dead time
+      // (e.g. time spent standing still before the first logged move), which
+      // would otherwise leave the marker sitting in the wrong place for the
+      // first stretch of playback before frac ever reaches the first event.
+      const firstEventStart = session.events[0].s;
+      const lastEvent = session.events[session.events.length - 1];
+      const lastEventEnd = lastEvent.e || lastEvent.s;
+      const totalRealSeconds = Math.max(1, lastEventEnd - firstEventStart);
 
       // Precompute each event's pixel start/end and its share of total time.
       const segments = session.events.map(ev => {
         const from = gameToMapPixels(ev.f[0], ev.f[1]);
         const to = gameToMapPixels(ev.t[0], ev.t[1]);
-        const evStart = ev.s - session.start;
-        const evEnd = (ev.e || ev.s) - session.start;
+        const evStart = ev.s - firstEventStart;
+        const evEnd = (ev.e || ev.s) - firstEventStart;
         return { from, to, startFrac: evStart / totalRealSeconds, endFrac: Math.max(evEnd / totalRealSeconds, evStart / totalRealSeconds + 0.01) };
       });
+      // Guarantee full coverage of the 0-1 range regardless of rounding.
+      segments[0].startFrac = 0;
+      segments[segments.length - 1].endFrac = 1;
 
       const playbackStart = performance.now();
       function tick(now) {
