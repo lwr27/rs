@@ -750,8 +750,13 @@
       // rather than each drifting to their own individual first-played
       // date. Automatically correct going forward (next month, next player
       // added, etc.) since it's derived from live data, not hardcoded.
-      let start = globalStartDate ? new Date(globalStartDate + "T00:00:00Z") : new Date(today);
-      start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // back to Sunday
+      const realStart = globalStartDate ? new Date(globalStartDate + "T00:00:00Z") : new Date(today);
+      // The grid itself still walks in full Sunday-aligned weeks internally
+      // (so weekday rows line up correctly week to week) - cells before
+      // realStart are rendered hidden below, the same way future days are,
+      // rather than shown as visible empty squares.
+      let start = new Date(realStart);
+      start.setUTCDate(start.getUTCDate() - start.getUTCDay());
 
       const maxGain = Math.max(1, ...Object.values(nonMaxedByDay));
       const levelFor = xp => {
@@ -826,7 +831,7 @@
         for (let d = 0; d < 7; d++) {
           const key = cur.toISOString().slice(0, 10);
           const cell = document.createElement("div");
-          if (cur > today) {
+          if (cur > today || cur < realStart) {
             cell.className = "cal-day";
             cell.style.visibility = "hidden";
           } else {
