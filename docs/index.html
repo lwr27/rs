@@ -290,8 +290,15 @@
 
   <div class="tab-panel" id="panel-map">
     <div class="luck-wrap">
-      <div id="mapContainer" style="position:relative; width:100%; border-radius: 6px; overflow:hidden; border: 1px solid var(--panel-border);">
-        <img src="map/current-map-image-0.png" alt="World map" style="display:block; width:100%; height:auto;" />
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button id="mapZoomOut" class="tab-btn" style="padding:6px 14px;">−</button>
+        <button id="mapZoomIn" class="tab-btn" style="padding:6px 14px;">+</button>
+        <span style="color:var(--text-faint); font-size:0.75rem; align-self:center;">Scroll to pan, use +/− to zoom</span>
+      </div>
+      <div id="mapViewport" style="position:relative; width:100%; height:70vh; overflow:auto; border-radius:6px; border:1px solid var(--panel-border); background:#000;">
+        <div id="mapContainer" style="position:relative; width:100%; transform-origin: top left;">
+          <img src="map/current-map-image-0.png" alt="World map" style="display:block; width:100%; height:auto;" />
+        </div>
       </div>
     </div>
   </div>
@@ -1133,8 +1140,28 @@
       return { xPct: (px / MAP_IMG_W) * 100, yPct: (py / MAP_IMG_H) * 100 };
     }
 
-    // Temporary test marker - drops a single dot at Lumbridge Home Teleport
-    // to sanity-check the calibration visually. Remove once confirmed.
+    // Map zoom: scales #mapContainer via CSS transform while #mapViewport
+    // handles the actual scrolling/panning (overflow:auto). The marker dot
+    // lives inside mapContainer too, so it scales and repositions correctly
+    // along with the image - no separate math needed for the marker on zoom.
+    let mapZoomLevel = 1;
+    function applyMapZoom() {
+      const container = document.getElementById("mapContainer");
+      if (!container) return;
+      container.style.width = (mapZoomLevel * 100) + "%";
+    }
+    function initMapZoom() {
+      const zoomIn = document.getElementById("mapZoomIn");
+      const zoomOut = document.getElementById("mapZoomOut");
+      if (zoomIn) zoomIn.addEventListener("click", () => {
+        mapZoomLevel = Math.min(8, mapZoomLevel * 1.5);
+        applyMapZoom();
+      });
+      if (zoomOut) zoomOut.addEventListener("click", () => {
+        mapZoomLevel = Math.max(1, mapZoomLevel / 1.5);
+        applyMapZoom();
+      });
+    }
     function renderTestMarker() {
       const container = document.getElementById("mapContainer");
       if (!container) return;
@@ -1217,6 +1244,7 @@
       renderRangerLuck(data.players);
       renderPatchNotes();
       renderTestMarker();
+      initMapZoom();
     }
 
     init();
