@@ -415,7 +415,7 @@
         (data.level < 99 ? '<div class="tr"><span>Next level</span><span>' + pct + '%</span></div>' : '');
     }
 
-    function renderColumn(player, history) {
+    function renderColumn(player, history, globalStartDate) {
       const col = document.createElement("div");
       col.className = "player-col";
 
@@ -686,7 +686,7 @@
       calLabel.className = "section-label";
       calLabel.textContent = "Days played";
       col.appendChild(calLabel);
-      col.appendChild(renderCalendar(player, history));
+      col.appendChild(renderCalendar(player, history, globalStartDate));
 
       return col;
     }
@@ -698,7 +698,7 @@
     });
     function londonDateKey(d) { return LONDON_FMT.format(d); }
 
-    function renderCalendar(player, history) {
+    function renderCalendar(player, history, globalStartDate) {
       const wrap = document.createElement("div");
       wrap.className = "cal-wrap";
 
@@ -744,12 +744,13 @@
       // rather than rolling into the next UTC day.
       const today = new Date(londonDateKey(new Date()) + "T00:00:00Z");
 
-      // Fixed shared start date (not per-player earliest data) - July 10,
-      // 2026 is the first day any of the three tracked players have data,
-      // so every player's calendar starts on the same week for easy
-      // side-by-side comparison rather than each drifting to their own
-      // individual first-played date.
-      let start = new Date("2026-07-10T00:00:00Z");
+      // Shared start date across all three players - computed in init() as
+      // the earliest calendar day ANY of the three players has an XP gain
+      // recorded, so every player's calendar starts on the same real week
+      // rather than each drifting to their own individual first-played
+      // date. Automatically correct going forward (next month, next player
+      // added, etc.) since it's derived from live data, not hardcoded.
+      let start = globalStartDate ? new Date(globalStartDate + "T00:00:00Z") : new Date(today);
       start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // back to Sunday
 
       const maxGain = Math.max(1, ...Object.values(nonMaxedByDay));
@@ -1663,8 +1664,24 @@
       const board = document.getElementById("board");
       const histories = await Promise.all(data.players.map(p => loadHistory(p.username)));
 
+      // Earliest calendar day (UK date) ANY player has a recorded XP gain -
+      // shared across all three calendars so they all start on the same
+      // real week, rather than each player's grid independently starting
+      // from their own first-played date. Recomputed live from the actual
+      // data every load, so it stays correct automatically (new month, a
+      // new player added, earlier history compacted, etc.) with nothing to
+      // manually update here.
+      let globalStartDate = null;
+      histories.forEach(h => {
+        (h && h.history ? h.history : []).forEach(e => {
+          if (!e.totalGain || e.totalGain <= 0) return;
+          const day = londonDateKey(new Date(e.timestamp));
+          if (!globalStartDate || day < globalStartDate) globalStartDate = day;
+        });
+      });
+
       data.players.forEach((player, i) => {
-        board.appendChild(renderColumn(player, histories[i]));
+        board.appendChild(renderColumn(player, histories[i], globalStartDate));
       });
 
       initTabs();
