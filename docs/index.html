@@ -293,6 +293,7 @@
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
       <span style="position:absolute; top:10px; left:10px; z-index:1001; color:var(--text-faint); font-size:0.75rem; background:var(--panel); padding:6px 10px; border-radius:6px; border:1px solid var(--panel-border);">Scroll wheel to zoom, drag/scroll to pan</span>
       <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
+        <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
         <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
         <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶ Play</button>
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
@@ -1230,24 +1231,35 @@
       });
     }
 
-    // Sample route-tracker sessions (real captured output, pasted in during
-    // calibration testing) - placeholder data until the plugin's GitHub
-    // upload is wired up and real session files are fetched from
-    // route-data/<hash>-YYYY-MM.json instead of hardcoded here.
-    const SAMPLE_SESSIONS = [
-      {"id":"s_1784892371","start":1784892371,"end":1784892399,"events":[
-        {"ty":"tp","f":[2741,3515,0],"t":[3222,3217,0],"s":1784892388},
-        {"ty":"walk","f":[3222,3217,0],"t":[3221,3217,0],"s":1784892390,"e":1784892392},
-        {"ty":"tp","f":[3221,3217,0],"t":[2756,3480,0],"s":1784892395},
-        {"ty":"walk","f":[2756,3480,0],"t":[2757,3479,0],"s":1784892397,"e":1784892399}
-      ]},
-      {"id":"s_1784894382","start":1784894382,"end":1784894419,"events":[
-        {"ty":"tp","f":[2757,3479,0],"t":[2654,2655,0],"s":1784894405},
-        {"ty":"walk","f":[2654,2655,0],"t":[2653,2654,0],"s":1784894407,"e":1784894409},
-        {"ty":"tp","f":[2653,2654,0],"t":[3211,3423,0],"s":1784894413},
-        {"ty":"walk","f":[3211,3423,0],"t":[3212,3424,0],"s":1784894415,"e":1784894418}
-      ]}
+    // Known route-tracker players, keyed by their RuneLite account hash -
+    // matches the <hash>-YYYY-MM.json naming the plugin uploads under
+    // route-data/. Add an entry here for each player once their hash is
+    // known (visible in the filename after their first real upload).
+    const ROUTE_PLAYERS = [
+      { name: "Lewis (test)", hash: "-8886915111317579996" }
     ];
+
+    function currentYearMonth() {
+      const d = new Date();
+      return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+    }
+
+    // Fetches a player's current-month route-data file from the repo. On
+    // any failure (file doesn't exist yet, network error, bad JSON) returns
+    // an empty array rather than throwing, so the UI can show "no sessions"
+    // cleanly instead of breaking.
+    async function fetchPlayerSessions(hash) {
+      try {
+        const path = "route-data/" + hash + "-" + currentYearMonth() + ".json";
+        const res = await fetch(path + "?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.error("Route data fetch error:", err);
+        return [];
+      }
+    }
 
     // Draws every event across the given sessions onto #routeOverlay as an
     // SVG path, in real pixel space matching the viewBox (6528x22784) - this
@@ -1303,6 +1315,13 @@
       const select = document.getElementById("sessionSelect");
       if (!select) return;
       select.innerHTML = "";
+      if (!sessions.length) {
+        const opt = document.createElement("option");
+        opt.textContent = "No sessions yet";
+        opt.disabled = true;
+        select.appendChild(opt);
+        return;
+      }
       sessions.forEach((session, i) => {
         const opt = document.createElement("option");
         opt.value = i;
@@ -1464,14 +1483,43 @@
       playbackAnimationId = requestAnimationFrame(tick);
     }
 
-    function initSessionControls(sessions) {
-      populateSessionSelect(sessions);
+    // Holds whichever player's sessions are currently loaded, so the Play
+    // button (and any future controls) can reference the live list rather
+    // than a stale closure captured at setup time.
+    let currentSessions = [];
+
+    async function loadAndRenderPlayer(hash) {
+      currentSessions = await fetchPlayerSessions(hash);
+      populateSessionSelect(currentSessions);
+      renderSessionPath(currentSessions);
+    }
+
+    function initSessionControls() {
+      const playerSelect = document.getElementById("playerSelect");
       const playBtn = document.getElementById("sessionPlayBtn");
-      const select = document.getElementById("sessionSelect");
+      const sessionSelect = document.getElementById("sessionSelect");
+
+      if (playerSelect) {
+        playerSelect.innerHTML = "";
+        ROUTE_PLAYERS.forEach((p, i) => {
+          const opt = document.createElement("option");
+          opt.value = i;
+          opt.textContent = p.name;
+          playerSelect.appendChild(opt);
+        });
+        playerSelect.addEventListener("change", () => {
+          const p = ROUTE_PLAYERS[parseInt(playerSelect.value, 10)];
+          if (p) loadAndRenderPlayer(p.hash);
+        });
+      }
+
       if (playBtn) playBtn.addEventListener("click", () => {
-        const idx = parseInt(select.value, 10);
-        if (!isNaN(idx) && sessions[idx]) playSession(sessions[idx]);
+        const idx = parseInt(sessionSelect.value, 10);
+        if (!isNaN(idx) && currentSessions[idx]) playSession(currentSessions[idx]);
       });
+
+      // Load the first known player on open.
+      if (ROUTE_PLAYERS.length) loadAndRenderPlayer(ROUTE_PLAYERS[0].hash);
     }
 
     // Very subtle seasonal tint - a faint colour shift in the background
@@ -1543,8 +1591,7 @@
       renderPatchNotes();
       renderTestMarker();
       initMapZoom();
-      renderSessionPath(SAMPLE_SESSIONS);
-      initSessionControls(SAMPLE_SESSIONS);
+      initSessionControls();
     }
 
     init();
