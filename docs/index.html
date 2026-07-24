@@ -274,6 +274,7 @@
     <button class="tab-btn active" data-tab="skills">Skills</button>
     <button class="tab-btn" data-tab="luck">5JV: Corrupted Gauntlet <span class="tab-tick">✓</span></button>
     <button class="tab-btn" data-tab="rangerluck">6LR: Ranger Boots</button>
+    <button class="tab-btn" data-tab="map">Map</button>
   </div>
 
   <div class="tab-panel active" id="panel-skills">
@@ -286,6 +287,12 @@
 
   <div class="tab-panel" id="panel-rangerluck">
     <div id="rangerLuckContent"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-map">
+    <div class="luck-wrap">
+      <img src="map/current-map-image-0.png" alt="World map" style="width:100%; height:auto; border-radius: 6px; border: 1px solid var(--panel-border);" />
+    </div>
   </div>
 
   <script>
@@ -460,7 +467,7 @@
       const statsStrip = document.createElement("div");
       statsStrip.className = "player-stats-strip";
       statsStrip.innerHTML =
-        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val">' + combatLevel + '</span></div>' +
+        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val" style="cursor:default" onclick="document.querySelector(\'[data-tab=map]\').click()">' + combatLevel + '</span></div>' +
         '<div class="pss-item"><span class="pss-label">Total XP</span><span class="pss-val odometer">0</span></div>';
       col.appendChild(statsStrip);
       animateOdometer(statsStrip.querySelector(".odometer"), totalXp, 1200);
