@@ -1338,6 +1338,17 @@
 
       const existing = svg.querySelector("#playbackMarker");
       if (existing) existing.remove();
+      const existingHalo = svg.querySelector("#playbackHalo");
+      if (existingHalo) existingHalo.remove();
+
+      // Soft halo behind the marker so it stays visible against busy map
+      // terrain when the camera is zoomed in close.
+      const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      halo.id = "playbackHalo";
+      halo.setAttribute("r", 26);
+      halo.setAttribute("fill", "#ff3b3b");
+      halo.setAttribute("opacity", "0.25");
+      svg.appendChild(halo);
 
       const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       marker.id = "playbackMarker";
@@ -1348,6 +1359,8 @@
       svg.appendChild(marker);
 
       const PLAYBACK_MS = 6000; // total on-screen playback time, regardless of real duration
+      const FOLLOW_ZOOM = 5;    // zoom level the camera snaps to when playback starts
+      const FOLLOW_EASE = 0.12; // 0-1: how sharply the camera chases the marker
 
       // Rebase the timeline to the actual first-event-start -> last-event-end
       // span, not session.start/session.end - those can include dead time
@@ -1381,6 +1394,31 @@
         };
       });
 
+      // Camera: zoom in and jump straight to the route's starting point
+      // before the first frame, so playback opens tight on the player rather
+      // than wherever the map happened to be scrolled.
+      const viewport = document.getElementById("mapViewport");
+      const container = document.getElementById("mapContainer");
+      mapZoomLevel = FOLLOW_ZOOM;
+      applyMapZoom();
+
+      // Converts a point in the map image's own pixel space (6528x22784)
+      // into the scroll offsets that centre it in the viewport at the
+      // current zoom level.
+      function scrollTargetFor(px, py) {
+        const cw = container.scrollWidth, ch = container.scrollHeight;
+        return {
+          left: (px / MAP_IMG_W) * cw - viewport.clientWidth / 2,
+          top: (py / MAP_IMG_H) * ch - viewport.clientHeight / 2
+        };
+      }
+
+      if (viewport && container) {
+        const startTarget = scrollTargetFor(segments[0].from.x, segments[0].from.y);
+        viewport.scrollLeft = startTarget.left;
+        viewport.scrollTop = startTarget.top;
+      }
+
       const playbackStart = performance.now();
       function tick(now) {
         try {
@@ -1395,6 +1433,19 @@
           const y = seg.from.y + (seg.to.y - seg.from.y) * segFrac;
           marker.setAttribute("cx", x.toFixed(1));
           marker.setAttribute("cy", y.toFixed(1));
+          halo.setAttribute("cx", x.toFixed(1));
+          halo.setAttribute("cy", y.toFixed(1));
+          // Gentle pulse so the marker reads as "live" while moving.
+          halo.setAttribute("r", (24 + Math.sin(elapsed / 180) * 6).toFixed(1));
+
+          // Camera follow: ease the viewport toward the marker rather than
+          // snapping to it, so teleport jumps glide across the map instead
+          // of cutting instantly.
+          if (viewport && container) {
+            const target = scrollTargetFor(x, y);
+            viewport.scrollLeft += (target.left - viewport.scrollLeft) * FOLLOW_EASE;
+            viewport.scrollTop += (target.top - viewport.scrollTop) * FOLLOW_EASE;
+          }
 
           if (statusEl) statusEl.textContent = Math.round(frac * 100) + "%";
 
