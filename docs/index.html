@@ -744,12 +744,12 @@
       // rather than rolling into the next UTC day.
       const today = new Date(londonDateKey(new Date()) + "T00:00:00Z");
 
-      // Fixed shared start date (not per-player earliest data) - June 10,
+      // Fixed shared start date (not per-player earliest data) - July 10,
       // 2026 is the first day any of the three tracked players have data,
       // so every player's calendar starts on the same week for easy
       // side-by-side comparison rather than each drifting to their own
       // individual first-played date.
-      let start = new Date("2026-06-10T00:00:00Z");
+      let start = new Date("2026-07-10T00:00:00Z");
       start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // back to Sunday
 
       const maxGain = Math.max(1, ...Object.values(nonMaxedByDay));
