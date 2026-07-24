@@ -290,7 +290,9 @@
 
   <div class="tab-panel" id="panel-map">
     <div class="luck-wrap">
-      <img src="map/current-map-image-0.png" alt="World map" style="width:100%; height:auto; border-radius: 6px; border: 1px solid var(--panel-border);" />
+      <div id="mapContainer" style="position:relative; width:100%; border-radius: 6px; overflow:hidden; border: 1px solid var(--panel-border);">
+        <img src="map/current-map-image-0.png" alt="World map" style="display:block; width:100%; height:auto;" />
+      </div>
     </div>
   </div>
 
@@ -1114,6 +1116,39 @@
       document.getElementById("panel-map").classList.add("active");
     }
 
+    // Game-coordinate -> map-image pixel calibration, derived from two
+    // verified real-game reference points (Lumbridge Home Teleport and
+    // Camelot/Seers, both captured via the RuneLite route-tracker plugin
+    // against the resized 6528x22784 current-map-image-0.png):
+    //   Lumbridge: game (3221.5, 3217)   -> pixel (4520, 18777)
+    //   Camelot:   game (2756.5, 3479.5) -> pixel (3595, 18259)
+    // Only 2 points so far - holds up well for the mainland area between
+    // these two, unverified at the map's extremes (far north/south).
+    const MAP_IMG_W = 6528, MAP_IMG_H = 22784;
+    const MAP_X_SCALE = 1.989, MAP_X_ORIGIN = -1887.6;
+    const MAP_Y_SCALE = 1.974, MAP_Y_ORIGIN = 25127.4;
+    function gameToMapPercent(gameX, gameY) {
+      const px = MAP_X_ORIGIN + MAP_X_SCALE * gameX;
+      const py = MAP_Y_ORIGIN - MAP_Y_SCALE * gameY;
+      return { xPct: (px / MAP_IMG_W) * 100, yPct: (py / MAP_IMG_H) * 100 };
+    }
+
+    // Temporary test marker - drops a single dot at Lumbridge Home Teleport
+    // to sanity-check the calibration visually. Remove once confirmed.
+    function renderTestMarker() {
+      const container = document.getElementById("mapContainer");
+      if (!container) return;
+      const { xPct, yPct } = gameToMapPercent(3221.5, 3217);
+      const dot = document.createElement("div");
+      dot.style.cssText =
+        "position:absolute; width:14px; height:14px; border-radius:50%; " +
+        "background:#ff3b3b; border:2px solid #fff; box-shadow:0 0 6px rgba(0,0,0,0.6); " +
+        "left:" + xPct.toFixed(3) + "%; top:" + yPct.toFixed(3) + "%; " +
+        "transform:translate(-50%,-50%); z-index:5;";
+      dot.title = "Lumbridge Home Teleport (test marker)";
+      container.appendChild(dot);
+    }
+
     // Very subtle seasonal tint - a faint colour shift in the background
     // gradient, nothing animated or attention-grabbing.
     (function setSeasonTint() {
@@ -1181,6 +1216,7 @@
       renderGauntletLuck(data.players);
       renderRangerLuck(data.players);
       renderPatchNotes();
+      renderTestMarker();
     }
 
     init();
