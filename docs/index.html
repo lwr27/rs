@@ -1610,7 +1610,11 @@
     async function loadAndRenderPlayer(hash) {
       currentSessions = await fetchPlayerSessions(hash);
       populateSessionSelect(currentSessions);
-      renderSessionPath(currentSessions);
+      // Draw only the first session's path by default - not every session
+      // at once, which was overlaying every route the player has ever
+      // recorded on top of each other.
+      renderSessionPath(currentSessions.length ? [currentSessions[0]] : []);
+      if (currentSessions.length) loadSessionForPlayback(currentSessions[0]);
     }
 
     function initSessionControls() {
@@ -1634,12 +1638,16 @@
         });
       }
 
-      // Selecting a session loads it (paused, positioned at the start) but
-      // doesn't play automatically - the Play button starts/pauses it.
+      // Selecting a session loads it for playback (paused, positioned at
+      // the start) AND redraws the static path to show only that session's
+      // route, rather than leaving every other session's path visible too.
       if (sessionSelect) {
         sessionSelect.addEventListener("change", () => {
           const idx = parseInt(sessionSelect.value, 10);
-          if (!isNaN(idx) && currentSessions[idx]) loadSessionForPlayback(currentSessions[idx]);
+          if (!isNaN(idx) && currentSessions[idx]) {
+            renderSessionPath([currentSessions[idx]]);
+            loadSessionForPlayback(currentSessions[idx]);
+          }
         });
       }
 
