@@ -1160,13 +1160,17 @@
       zoom: function (scale) { return Math.log(scale) / Math.LN2 + 8; }
     });
 
-    // Game-coordinate calibration, derived from 3 verified real-game
-    // reference points (Lumbridge, Varrock, Pest Control) captured via the
-    // RuneLite route-tracker plugin, against the RESIZED (50%) map image
-    // (6528x22784). Tiles were cut from the ORIGINAL full-resolution image
+    // Game-coordinate calibration, refined via a least-squares fit against
+    // 3 precisely-clicked fairy ring destinations (BIS/AJS/a third ring,
+    // well-separated across the map) checked directly against the live
+    // tiled map using the in-page click debug tool - residuals under 1.5
+    // tiles at all 3 points. Supersedes the original 2-point estimate
+    // (Lumbridge + Camelot only), which drifted more the further from
+    // those two points you got. Against the RESIZED (50%) map image
+    // (6528x22784); tiles were cut from the ORIGINAL full-resolution image
     // (13056x45568, exactly double), so results are doubled before use.
-    const MAP_X_SCALE = 1.989, MAP_X_ORIGIN = -1887.6;
-    const MAP_Y_SCALE = 1.974, MAP_Y_ORIGIN = 25127.4;
+    const MAP_X_SCALE = 2.00694, MAP_X_ORIGIN = -1936.32;
+    const MAP_Y_SCALE = 1.99373, MAP_Y_ORIGIN = 25191.65;
     function gameToMapPixels(gameX, gameY) {
       return {
         x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
