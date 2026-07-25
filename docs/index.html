@@ -1161,16 +1161,19 @@
     });
 
     // Game-coordinate calibration, refined via a least-squares fit against
-    // 4 precisely-clicked fairy ring destinations spread across the map
-    // (checked directly against the live tiled map using the in-page click
-    // debug tool). Residuals land around 1-2 tiles at the widest-spread
-    // points - likely close to the practical floor for manually clicking a
-    // multi-tile icon, rather than a formula problem. Against the RESIZED
-    // (50%) map image (6528x22784); tiles were cut from the ORIGINAL
-    // full-resolution image (13056x45568, exactly double), so results are
-    // doubled before use.
-    const MAP_X_SCALE = 2.01413, MAP_X_ORIGIN = -1954.02;
-    const MAP_Y_SCALE = 1.99084, MAP_Y_ORIGIN = 25180.59;
+    // 7 precisely-clicked fairy ring destinations spread across the map
+    // (Zanaris, Ajp, Alp, Akq, Bip, Blp, Bkq - all clicked and reported
+    // in one batch, avoiding the noise of chaining corrections on top of
+    // corrections from earlier rounds). Residuals mostly under 1 tile.
+    // Fitted scale converged to almost exactly 2.000 px/tile on both axes -
+    // consistent with the known 4px/game-tile native resolution halved by
+    // the 50% image resize, a good sign this fit reflects the true
+    // underlying value rather than approximation noise. Against the
+    // RESIZED (50%) map image (6528x22784); tiles were cut from the
+    // ORIGINAL full-resolution image (13056x45568, exactly double), so
+    // results are doubled before use.
+    const MAP_X_SCALE = 2.00014, MAP_X_ORIGIN = -1918.81;
+    const MAP_Y_SCALE = 2.00097, MAP_Y_ORIGIN = 25217.49;
     function gameToMapPixels(gameX, gameY) {
       return {
         x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
