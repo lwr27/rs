@@ -1268,6 +1268,23 @@
       }
     }
 
+    // Expands an event into the full ordered list of map-pixel points it
+    // covers: start, any recorded turn waypoints, then end. Walk events
+    // carry a flat [x1,y1,x2,y2,...] waypoint array (`w`) recording every
+    // direction change, so a winding route draws as its real shape rather
+    // than a straight line between endpoints. Straight walks and teleports
+    // have no waypoints and collapse to just two points.
+    function eventPoints(ev) {
+      const pts = [gameToMapPixels(ev.f[0], ev.f[1])];
+      if (ev.ty === "walk" && Array.isArray(ev.w)) {
+        for (let i = 0; i + 1 < ev.w.length; i += 2) {
+          pts.push(gameToMapPixels(ev.w[i], ev.w[i + 1]));
+        }
+      }
+      pts.push(gameToMapPixels(ev.t[0], ev.t[1]));
+      return pts;
+    }
+
     // Draws every event across the given sessions onto #routeOverlay as an
     // SVG path, in real pixel space matching the viewBox (6528x22784) - this
     // keeps circles circular and lines correctly proportioned, unlike the
@@ -1287,26 +1304,28 @@
 
       sessions.forEach(session => {
         session.events.forEach(ev => {
-          const from = gameToMapPixels(ev.f[0], ev.f[1]);
-          const to = gameToMapPixels(ev.t[0], ev.t[1]);
+          if (ev.ty === "bank" || !ev.f || !ev.t) return;
           const isWalk = ev.ty === "walk";
+          const pts = eventPoints(ev);
 
-          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("x1", from.x.toFixed(1));
-          line.setAttribute("y1", from.y.toFixed(1));
-          line.setAttribute("x2", to.x.toFixed(1));
-          line.setAttribute("y2", to.y.toFixed(1));
-          line.setAttribute("stroke", isWalk ? WALK_COLOR : TP_COLOR);
-          line.setAttribute("stroke-width", STROKE_W);
-          if (!isWalk) line.setAttribute("stroke-dasharray", (STROKE_W * 6) + "," + (STROKE_W * 4));
-          svg.appendChild(line);
+          // Polyline rather than a single line, so a walk follows every
+          // recorded turn instead of cutting straight from start to end.
+          const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+          poly.setAttribute("points", pts.map(p => p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" "));
+          poly.setAttribute("fill", "none");
+          poly.setAttribute("stroke", isWalk ? WALK_COLOR : TP_COLOR);
+          poly.setAttribute("stroke-width", STROKE_W);
+          poly.setAttribute("stroke-linejoin", "round");
+          poly.setAttribute("stroke-linecap", "round");
+          if (!isWalk) poly.setAttribute("stroke-dasharray", (STROKE_W * 6) + "," + (STROKE_W * 4));
+          svg.appendChild(poly);
 
           // Small circle at the teleport's origin point, marking a jump
           // start distinct from ordinary ground movement.
           if (!isWalk) {
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("cx", from.x.toFixed(1));
-            circle.setAttribute("cy", from.y.toFixed(1));
+            circle.setAttribute("cx", pts[0].x.toFixed(1));
+            circle.setAttribute("cy", pts[0].y.toFixed(1));
             circle.setAttribute("r", DOT_R);
             circle.setAttribute("fill", TP_COLOR);
             svg.appendChild(circle);
@@ -1438,29 +1457,47 @@
         return;
       }
 
-      // Segments are laid end-to-end across 0-1, weighted by type rather
-      // than given equal shares - a teleport is not travel, so it gets a
-      // small fixed weight (reads as a near-instant jump); a walk's weight
-      // is proportional to how long it actually took in-game (clamped to a
-      // sensible minimum), so a short shuffle and a long run across a
-      // region both read at a speed that actually looks like movement
-      // rather than every step taking the same fraction of playback time.
+      // Each event expands into one sub-segment per leg of its path (a
+      // straight walk is one leg; a walk with recorded turns is one leg per
+      // turn), so the playback marker traces the real route shape rather
+      // than cutting corners. An event's total time weight is split across
+      // its legs in proportion to their pixel length, keeping the marker's
+      // apparent speed constant within a walk instead of speeding up on
+      // long legs and crawling on short ones.
       const TP_WEIGHT = 0.15;
       const MAX_WALK_WEIGHT = 20; // caps one long walk from dominating the whole playback
-      const weights = events.map(ev => {
-        if (ev.ty !== "walk") return TP_WEIGHT;
-        const realSeconds = Math.max(1, (ev.e || ev.s) - ev.s);
-        return Math.min(MAX_WALK_WEIGHT, realSeconds);
+      const rawSegments = [];
+      events.forEach(ev => {
+        const isWalk = ev.ty === "walk";
+        const eventWeight = isWalk
+          ? Math.min(MAX_WALK_WEIGHT, Math.max(1, (ev.e || ev.s) - ev.s))
+          : TP_WEIGHT;
+        const pts = eventPoints(ev);
+
+        const legLengths = [];
+        let totalLen = 0;
+        for (let i = 0; i + 1 < pts.length; i++) {
+          const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y;
+          const len = Math.max(0.0001, Math.hypot(dx, dy));
+          legLengths.push(len);
+          totalLen += len;
+        }
+        for (let i = 0; i + 1 < pts.length; i++) {
+          rawSegments.push({
+            from: pts[i],
+            to: pts[i + 1],
+            isWalk,
+            weight: eventWeight * (legLengths[i] / totalLen)
+          });
+        }
       });
-      const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+      const totalWeight = rawSegments.reduce((a, s) => a + s.weight, 0) || 1;
       let cumWeight = 0;
-      const segments = events.map((ev, i) => {
-        const from = gameToMapPixels(ev.f[0], ev.f[1]);
-        const to = gameToMapPixels(ev.t[0], ev.t[1]);
+      const segments = rawSegments.map(s => {
         const startFrac = cumWeight / totalWeight;
-        cumWeight += weights[i];
-        const endFrac = cumWeight / totalWeight;
-        return { from, to, startFrac, endFrac, isWalk: ev.ty === "walk" };
+        cumWeight += s.weight;
+        return { from: s.from, to: s.to, isWalk: s.isWalk, startFrac, endFrac: cumWeight / totalWeight };
       });
 
       const viewport = document.getElementById("mapViewport");
