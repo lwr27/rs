@@ -1317,9 +1317,15 @@
         maxZoom: 11,
         zoomControl: true,
         attributionControl: false,
-        preferCanvas: true,
         zoomAnimation: false, // avoids potential zoom-anchor drift when combined
                               // with our custom CRS's overridden scale()
+        zoomSnap: 0,          // continuous/fractional zoom instead of forcing
+                              // whole-level jumps - the snap-to-nearest-level
+                              // math is what degrades most at low zoom, where
+                              // the whole map occupies a much smaller pixel
+                              // area under our custom CRS than a standard one
+        zoomDelta: 0.5,       // matches the finer zoomSnap for a reasonable
+                              // step size on the +/- zoom control buttons
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
