@@ -303,6 +303,7 @@
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
+      <div id="calibDebug" style="position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:1001; color:#fff; font-size:0.8rem; background:var(--panel); padding:6px 10px; border-radius:6px; border:1px solid var(--panel-border); display:none;"></div>
     </div>
   </div>
 
@@ -1176,6 +1177,16 @@
       const px = gameToMapPixels(gameX, gameY);
       return L.latLng(-px.y, px.x);
     }
+    // Inverse of gameToLatLng - used only by the temporary calibration-check
+    // click handler below, to read off exactly what game coordinate a given
+    // map pixel corresponds to under the current formula.
+    function latLngToGame(latlng) {
+      const px = latlng.lng, py = -latlng.lat;
+      return {
+        x: ((px / 2) - MAP_X_ORIGIN) / MAP_X_SCALE,
+        y: (MAP_Y_ORIGIN - (py / 2)) / MAP_Y_SCALE
+      };
+    }
 
     let leafletMap = null;
     let currentPlane = 0;
@@ -1307,6 +1318,34 @@
                        // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
+
+      // Temporary calibration-check tool: click anywhere on the map to see
+      // exactly what game coordinate that pixel corresponds to under the
+      // current formula. Compare against a known real coordinate (e.g. a
+      // fairy ring's logged destination) to find any offset precisely,
+      // rather than eyeballing screenshots.
+      const debugEl = document.getElementById("calibDebug");
+      leafletMap.on("click", (e) => {
+        const g = latLngToGame(e.latlng);
+        if (debugEl) {
+          debugEl.style.display = "block";
+          debugEl.textContent = "Clicked map = game (" + g.x.toFixed(1) + ", " + g.y.toFixed(1) + ")";
+        }
+      });
+
+      // Temporary calibration aid: click anywhere on the map to see the
+      // game coordinates our current formula computes for that exact spot.
+      // Compare against a known real landmark's actual coordinates to spot
+      // any drift. Remove once recalibration is confirmed accurate.
+      leafletMap.on("click", (e) => {
+        const nativeX = e.latlng.lng, nativeY = -e.latlng.lat;
+        const gameX = (nativeX / 2 - MAP_X_ORIGIN) / MAP_X_SCALE;
+        const gameY = (MAP_Y_ORIGIN - nativeY / 2) / MAP_Y_SCALE;
+        L.popup()
+          .setLatLng(e.latlng)
+          .setContent("Game coords here: " + gameX.toFixed(1) + ", " + gameY.toFixed(1))
+          .openOn(leafletMap);
+      });
 
       const closeBtn = document.getElementById("mapCloseBtn");
       if (closeBtn) closeBtn.addEventListener("click", () => {
