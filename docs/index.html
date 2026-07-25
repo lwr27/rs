@@ -1446,10 +1446,11 @@
       // region both read at a speed that actually looks like movement
       // rather than every step taking the same fraction of playback time.
       const TP_WEIGHT = 0.15;
+      const MAX_WALK_WEIGHT = 20; // caps one long walk from dominating the whole playback
       const weights = events.map(ev => {
         if (ev.ty !== "walk") return TP_WEIGHT;
         const realSeconds = Math.max(1, (ev.e || ev.s) - ev.s);
-        return Math.max(1, realSeconds);
+        return Math.min(MAX_WALK_WEIGHT, realSeconds);
       });
       const totalWeight = weights.reduce((a, b) => a + b, 0);
       let cumWeight = 0;
