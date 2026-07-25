@@ -1274,7 +1274,9 @@
         maxZoom: 11,
         zoomControl: true,
         attributionControl: false,
-        preferCanvas: true
+        preferCanvas: true,
+        center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
+        zoom: 6                            // required before adding the tile layer
       });
       planeTileLayer = new OSRSTileLayer("https://map.3kt.live/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
         tileSize: 256,
