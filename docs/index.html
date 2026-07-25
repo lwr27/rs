@@ -1161,16 +1161,16 @@
     });
 
     // Game-coordinate calibration, refined via a least-squares fit against
-    // 3 precisely-clicked fairy ring destinations (BIS/AJS/a third ring,
-    // well-separated across the map) checked directly against the live
-    // tiled map using the in-page click debug tool - residuals under 1.5
-    // tiles at all 3 points. Supersedes the original 2-point estimate
-    // (Lumbridge + Camelot only), which drifted more the further from
-    // those two points you got. Against the RESIZED (50%) map image
-    // (6528x22784); tiles were cut from the ORIGINAL full-resolution image
-    // (13056x45568, exactly double), so results are doubled before use.
-    const MAP_X_SCALE = 2.00694, MAP_X_ORIGIN = -1936.32;
-    const MAP_Y_SCALE = 1.99373, MAP_Y_ORIGIN = 25191.65;
+    // 4 precisely-clicked fairy ring destinations spread across the map
+    // (checked directly against the live tiled map using the in-page click
+    // debug tool). Residuals land around 1-2 tiles at the widest-spread
+    // points - likely close to the practical floor for manually clicking a
+    // multi-tile icon, rather than a formula problem. Against the RESIZED
+    // (50%) map image (6528x22784); tiles were cut from the ORIGINAL
+    // full-resolution image (13056x45568, exactly double), so results are
+    // doubled before use.
+    const MAP_X_SCALE = 2.01413, MAP_X_ORIGIN = -1954.02;
+    const MAP_Y_SCALE = 1.99084, MAP_Y_ORIGIN = 25180.59;
     function gameToMapPixels(gameX, gameY) {
       return {
         x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
