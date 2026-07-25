@@ -1210,6 +1210,25 @@
       }
     });
 
+    // Fetches a 3x3 grid of tiles around a given point at the given zoom
+    // via plain Image() requests, ahead of when they're actually needed -
+    // the browser caches the response, so by the time Leaflet's own tile
+    // layer asks for the same URL (e.g. when a teleport snaps the camera
+    // there) it's often already loaded instead of showing black.
+    function preloadTilesAround(latlng, zoom) {
+      if (!planeTileLayer || !leafletMap) return;
+      const point = leafletMap.project(latlng, zoom);
+      const tileSize = 256;
+      const centerTx = Math.floor(point.x / tileSize);
+      const centerTy = Math.floor(point.y / tileSize);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const url = planeTileLayer.getTileUrl({ z: zoom, x: centerTx + dx, y: centerTy + dy });
+          new Image().src = url;
+        }
+      }
+    }
+
     // Known route-tracker players, keyed by their RuneLite account hash -
     // matches the <hash>-YYYY-MM.json naming the plugin uploads under
     // route-data/. Add an entry here for each player once their hash is
@@ -1278,11 +1297,14 @@
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
-      planeTileLayer = new OSRSTileLayer("https://map.3kt.live/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
+      planeTileLayer = new OSRSTileLayer("https://lwr27.github.io/rs-map-tiles/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
         tileSize: 256,
         minZoom: 3,
         maxZoom: 11,
-        noWrap: false
+        noWrap: false,
+        keepBuffer: 6 // preload a wider ring of tiles around the visible area,
+                       // so nearby pans/jumps are more likely to already have
+                       // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
 
@@ -1459,6 +1481,13 @@
         cumWeight += s.weight;
         return { from: s.from, to: s.to, isWalk: s.isWalk, startFrac, endFrac: cumWeight / totalWeight };
       });
+
+      // Teleport destinations are known the instant a session loads (they're
+      // just data, not something that needs to actually happen first), so
+      // kick off loading their tiles in the background right away - well
+      // before playback's near-instant jump reaches that point, so the
+      // camera snap is far less likely to land on still-loading black tiles.
+      segments.filter(s => !s.isWalk).forEach(s => preloadTilesAround(s.to, FOLLOW_ZOOM));
 
       // Positions the marker/halo/camera for a given fraction (0-1) through
       // the route. Shared by every control (play loop, scrubber, step
