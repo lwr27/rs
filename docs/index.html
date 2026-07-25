@@ -1142,6 +1142,12 @@
         } else {
           leafletMap.setView(gameToLatLng(3221.5, 3217), 6);
         }
+        // A second invalidateSize shortly after - the fixed-position overlay's
+        // CSS layout can still be settling when the first (rAF-timed) call
+        // runs, leaving Leaflet's internal container-size cache stale. Every
+        // zoom-around-cursor calculation after that anchors to the wrong
+        // point, which looks exactly like zooming jumping to the wrong tile.
+        setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
       });
     }
 
@@ -1312,6 +1318,8 @@
         zoomControl: true,
         attributionControl: false,
         preferCanvas: true,
+        zoomAnimation: false, // avoids potential zoom-anchor drift when combined
+                              // with our custom CRS's overridden scale()
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
@@ -1481,8 +1489,12 @@
 
       const PLAYBACK_MS = 6000; // total on-screen playback time, regardless of real duration
       const FOLLOW_ZOOM = 8;
-      const TP_WEIGHT = 0.15;
-      const MAX_WALK_WEIGHT = 20; // caps one long walk from dominating the whole playback
+      const TP_WEIGHT = 1;         // was 0.15 - too small when several teleports
+                                   // followed one long walk, squeezing all of
+                                   // them into a near-invisible sliver of playback
+      const MAX_WALK_WEIGHT = 6;   // was 20 - lower cap keeps one long walk from
+                                   // dominating the whole playback even against
+                                   // just a couple of teleports
 
       const events = session.events.filter(ev =>
         ev && Array.isArray(ev.f) && Array.isArray(ev.t) &&
