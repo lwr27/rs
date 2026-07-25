@@ -303,7 +303,6 @@
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
-      <div id="calibDebug" style="position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:1001; color:#fff; font-size:0.8rem; background:var(--panel); padding:6px 10px; border-radius:6px; border:1px solid var(--panel-border); display:none;"></div>
     </div>
   </div>
 
@@ -1160,11 +1159,17 @@
     // (each step is a plain 2x upscale/downscale of the native image) - so
     // Leaflet's own zoom levels line up 1:1 with the tile folder names
     // (3-11) with no separate conversion needed.
-    const OSRS_CRS = L.extend({}, L.CRS.Simple, {
-      transformation: new L.Transformation(1, 0, -1, 0),
-      scale: function (zoom) { return Math.pow(2, zoom - 8); },
-      zoom: function (scale) { return Math.log(scale) / Math.LN2 + 8; }
-    });
+    // Plain, unmodified L.CRS.Simple - no scale()/zoom() override. An earlier
+    // version overrode scale() to directly equal 2^(zoom-8), which deviates
+    // from Leaflet's standard 256*2^zoom convention that internal zoom/pan/
+    // mousewheel math is built around - almost certainly the real cause of
+    // the zoom-anchor drift reported at low zoom. Explv's own live map (the
+    // proven reference implementation) doesn't override scale()/zoom() at
+    // all; instead the "which zoom is native resolution" adjustment is baked
+    // into our own gameToLatLng/latLngToGame conversion below (dividing by
+    // Leaflet's standard scale(8) = 256*2^8 = 65536), keeping the CRS itself
+    // fully standard-compliant.
+    const OSRS_CRS = L.CRS.Simple;
 
     // Game-coordinate calibration, refined via a least-squares fit against
     // 7 precisely-clicked fairy ring destinations spread across the map
@@ -1174,12 +1179,19 @@
     // Fitted scale converged to almost exactly 2.000 px/tile on both axes -
     // consistent with the known 4px/game-tile native resolution halved by
     // the 50% image resize, a good sign this fit reflects the true
-    // underlying value rather than approximation noise. Against the
-    // RESIZED (50%) map image (6528x22784); tiles were cut from the
-    // ORIGINAL full-resolution image (13056x45568, exactly double), so
-    // results are doubled before use.
+    // underlying value rather than approximation noise. (Explv's own exact
+    // Position.js formula was tried and rejected here - his hardcoded
+    // constants produce an impossible out-of-bounds result for our
+    // confirmed-correct Lumbridge tile, meaning they're stale relative to
+    // his repo's ongoing map-expansion regenerations over the years and
+    // don't match the tile set we're actually using.) Against the RESIZED
+    // (50%) map image (6528x22784); tiles were cut from the ORIGINAL
+    // full-resolution image (13056x45568, exactly double), so results are
+    // doubled before use.
     const MAP_X_SCALE = 2.00014, MAP_X_ORIGIN = -1918.81;
     const MAP_Y_SCALE = 2.00097, MAP_Y_ORIGIN = 25217.49;
+    const LEAFLET_ZOOM8_SCALE = 65536; // = 256 * 2^8, Leaflet's own scale(zoom)
+                                        // at zoom=8 (our tiles' native resolution)
     function gameToMapPixels(gameX, gameY) {
       return {
         x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
@@ -1188,13 +1200,10 @@
     }
     function gameToLatLng(gameX, gameY) {
       const px = gameToMapPixels(gameX, gameY);
-      return L.latLng(-px.y, px.x);
+      return L.latLng(-px.y / LEAFLET_ZOOM8_SCALE, px.x / LEAFLET_ZOOM8_SCALE);
     }
-    // Inverse of gameToLatLng - used only by the temporary calibration-check
-    // click handler below, to read off exactly what game coordinate a given
-    // map pixel corresponds to under the current formula.
     function latLngToGame(latlng) {
-      const px = latlng.lng, py = -latlng.lat;
+      const px = latlng.lng * LEAFLET_ZOOM8_SCALE, py = -latlng.lat * LEAFLET_ZOOM8_SCALE;
       return {
         x: ((px / 2) - MAP_X_ORIGIN) / MAP_X_SCALE,
         y: (MAP_Y_ORIGIN - (py / 2)) / MAP_Y_SCALE
@@ -1317,15 +1326,6 @@
         maxZoom: 11,
         zoomControl: true,
         attributionControl: false,
-        zoomAnimation: false, // avoids potential zoom-anchor drift when combined
-                              // with our custom CRS's overridden scale()
-        zoomSnap: 0,          // continuous/fractional zoom instead of forcing
-                              // whole-level jumps - the snap-to-nearest-level
-                              // math is what degrades most at low zoom, where
-                              // the whole map occupies a much smaller pixel
-                              // area under our custom CRS than a standard one
-        zoomDelta: 0.5,       // matches the finer zoomSnap for a reasonable
-                              // step size on the +/- zoom control buttons
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
@@ -1340,31 +1340,14 @@
       }).addTo(leafletMap);
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
 
-      // Temporary calibration-check tool: click anywhere on the map to see
-      // exactly what game coordinate that pixel corresponds to under the
-      // current formula. Compare against a known real coordinate (e.g. a
-      // fairy ring's logged destination) to find any offset precisely,
-      // rather than eyeballing screenshots.
-      const debugEl = document.getElementById("calibDebug");
+      // Calibration-check tool: click anywhere on the map to see exactly
+      // what game coordinate that pixel corresponds to. Useful for
+      // spot-checking against a known real landmark's coordinates.
       leafletMap.on("click", (e) => {
         const g = latLngToGame(e.latlng);
-        if (debugEl) {
-          debugEl.style.display = "block";
-          debugEl.textContent = "Clicked map = game (" + g.x.toFixed(1) + ", " + g.y.toFixed(1) + ")";
-        }
-      });
-
-      // Temporary calibration aid: click anywhere on the map to see the
-      // game coordinates our current formula computes for that exact spot.
-      // Compare against a known real landmark's actual coordinates to spot
-      // any drift. Remove once recalibration is confirmed accurate.
-      leafletMap.on("click", (e) => {
-        const nativeX = e.latlng.lng, nativeY = -e.latlng.lat;
-        const gameX = (nativeX / 2 - MAP_X_ORIGIN) / MAP_X_SCALE;
-        const gameY = (MAP_Y_ORIGIN - nativeY / 2) / MAP_Y_SCALE;
         L.popup()
           .setLatLng(e.latlng)
-          .setContent("Game coords here: " + gameX.toFixed(1) + ", " + gameY.toFixed(1))
+          .setContent("Game coords here: " + g.x.toFixed(1) + ", " + g.y.toFixed(1))
           .openOn(leafletMap);
       });
 
