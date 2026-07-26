@@ -1190,8 +1190,13 @@
     // doubled before use.
     const MAP_X_SCALE = 2.00014, MAP_X_ORIGIN = -1918.81;
     const MAP_Y_SCALE = 2.00097, MAP_Y_ORIGIN = 25217.49;
-    const LEAFLET_ZOOM8_SCALE = 65536; // = 256 * 2^8, Leaflet's own scale(zoom)
-                                        // at zoom=8 (our tiles' native resolution)
+    const LEAFLET_ZOOM8_SCALE = 256; // L.CRS.Simple OVERRIDES scale() to 2^zoom
+                                      // (NOT the base L.CRS's 256*2^zoom), so
+                                      // scale(8) = 2^8 = 256. Using 65536 here
+                                      // shrank every coordinate 256x, clustering
+                                      // all markers at the origin - the bug this
+                                      // fixes. Matches Explv's own approach
+                                      // (project at max zoom against 2^zoom scale).
     function gameToMapPixels(gameX, gameY) {
       return {
         x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
@@ -1320,12 +1325,28 @@
 
     function initLeafletMap() {
       if (leafletMap) return;
+      // Map extent in latlng, from the real image pixel dimensions - used
+      // for maxBounds so you can't pan/zoom off into infinite empty space
+      // beyond the actual map (which made zooming-out feel unbounded/lost).
+      const nativeH = PLANE_NATIVE_HEIGHT[currentPlane] || PLANE_NATIVE_HEIGHT[0];
+      const MAP_NATIVE_WIDTH = 13056;
+      const mapBounds = L.latLngBounds(
+        L.latLng(-nativeH / LEAFLET_ZOOM8_SCALE, 0),
+        L.latLng(0, MAP_NATIVE_WIDTH / LEAFLET_ZOOM8_SCALE)
+      );
+
       leafletMap = L.map("leafletMap", {
         crs: OSRS_CRS,
         minZoom: 3,
         maxZoom: 11,
         zoomControl: true,
         attributionControl: false,
+        zoomSnap: 0,   // continuous fractional zoom - avoids the big, jarring
+                        // whole-level jumps that made zooming out feel like it
+                        // was "struggling"/lurching to the wrong place
+        zoomDelta: 0.5, // gentler step for the +/- buttons to match
+        maxBounds: mapBounds,
+        maxBoundsViscosity: 0.7, // firm but not rigid pushback at the edges
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
