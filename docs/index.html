@@ -1325,28 +1325,17 @@
 
     function initLeafletMap() {
       if (leafletMap) return;
-      // Map extent in latlng, from the real image pixel dimensions - used
-      // for maxBounds so you can't pan/zoom off into infinite empty space
-      // beyond the actual map (which made zooming-out feel unbounded/lost).
-      const nativeH = PLANE_NATIVE_HEIGHT[currentPlane] || PLANE_NATIVE_HEIGHT[0];
-      const MAP_NATIVE_WIDTH = 13056;
-      const mapBounds = L.latLngBounds(
-        L.latLng(-nativeH / LEAFLET_ZOOM8_SCALE, 0),
-        L.latLng(0, MAP_NATIVE_WIDTH / LEAFLET_ZOOM8_SCALE)
-      );
-
       leafletMap = L.map("leafletMap", {
         crs: OSRS_CRS,
         minZoom: 3,
         maxZoom: 11,
         zoomControl: true,
         attributionControl: false,
+        scrollWheelZoom: true, // explicit: zoom toward the cursor, not center
         zoomSnap: 0,   // continuous fractional zoom - avoids the big, jarring
                         // whole-level jumps that made zooming out feel like it
                         // was "struggling"/lurching to the wrong place
         zoomDelta: 0.5, // gentler step for the +/- buttons to match
-        maxBounds: mapBounds,
-        maxBoundsViscosity: 0.7, // firm but not rigid pushback at the edges
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
