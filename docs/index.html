@@ -1327,21 +1327,20 @@
       if (leafletMap) return;
       leafletMap = L.map("leafletMap", {
         crs: OSRS_CRS,
-        minZoom: 3,
-        maxZoom: 11,
-        zoomControl: true,
+        // No minZoom/maxZoom set on the map itself - matching Explv's actual
+        // working config exactly, which only constrains zoom via the tile
+        // layer's own minZoom/maxZoom, not the map object's. Setting both
+        // (as an earlier version here did) may have interacted with
+        // Leaflet's internal zoom-clamping in a way that produced the
+        // reported jump at a specific zoom-level crossing.
+        zoomControl: false, // added manually below, matching his structure
         attributionControl: false,
+        renderer: L.canvas(), // matches his exact renderer choice
         scrollWheelZoom: true, // explicit: zoom toward the cursor, not center
-        // zoomSnap left at Leaflet's default (1) - continuous fractional zoom
-        // (zoomSnap:0) was tried here, but our tile pyramid only has whole
-        // integer zoom levels (3-11); fractional zoom meant Leaflet had to
-        // swap and CSS-rescale the entire displayed tile set right at each
-        // integer crossing, which is exactly what "jumps at a specific zoom
-        // level" looks like. Matches Explv's own untouched config, which
-        // never sets zoomSnap/zoomDelta at all.
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
+      L.control.zoom().addTo(leafletMap);
       planeTileLayer = new OSRSTileLayer("https://lwr27.github.io/rs-map-tiles/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
         tileSize: 256,
         minZoom: 3,
