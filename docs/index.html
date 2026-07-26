@@ -228,6 +228,7 @@
     padding: 8px 18px; border-radius: 6px; cursor: pointer;
   }
   .tab-btn.active { color: var(--text); border-color: var(--accent); background: var(--cell); }
+  .plane-btn { padding: 6px 12px; font-size: 0.8rem; }
   .tab-tick { color: #7bd88f; font-weight: 800; margin-left: 2px; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
@@ -293,6 +294,7 @@
   <div class="tab-panel" id="panel-map">
     <div style="position:fixed; inset:0; z-index:1000; background:#000;">
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
+      <div id="planeControl" style="position:absolute; top:10px; left:10px; z-index:1001; display:flex; gap:4px; background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--panel-border);"></div>
       <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
         <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
         <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
@@ -1310,6 +1312,8 @@
       // map.unproject(). Mirrors how Explv calls setView at the end of init.
       leafletMap.setView(gameToLatLng(3221, 3217), 7);
 
+      initPlaneControl();
+
       const closeBtn = document.getElementById("mapCloseBtn");
       if (closeBtn) closeBtn.addEventListener("click", () => {
         document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -1317,6 +1321,45 @@
         document.getElementById("panel-skills").classList.add("active");
         document.querySelector('.tab-btn[data-tab="skills"]').classList.add("active");
       });
+    }
+
+    // Switches the displayed floor (0=ground, 1-3=upper floors/basements).
+    // Just swaps the tile layer's URL template - Leaflet reloads whichever
+    // tiles are needed for the current view under the new plane, using the
+    // exact same coordinate math (game-to-latlng doesn't depend on plane at
+    // all; only which tile image set is shown does).
+    function switchPlane(plane) {
+      if (!leafletMap || !planeTileLayer || plane === currentPlane) return;
+      currentPlane = plane;
+      planeTileLayer.setUrl("https://lwr27.github.io/rs-map-tiles/tiles/" + currentPlane + "/{z}/{x}/{y}.png");
+      renderPlaneButtons();
+      // Redraw whatever session path is currently selected, so only this
+      // plane's route segments show (see eventLatLngs/renderSessionPath).
+      const sessionSelect = document.getElementById("sessionSelect");
+      const idx = sessionSelect ? parseInt(sessionSelect.value, 10) : NaN;
+      if (!isNaN(idx) && currentSessions[idx]) renderSessionPath([currentSessions[idx]]);
+    }
+
+    function renderPlaneButtons() {
+      document.querySelectorAll(".plane-btn").forEach(btn => {
+        btn.classList.toggle("active", parseInt(btn.dataset.plane, 10) === currentPlane);
+      });
+    }
+
+    function initPlaneControl() {
+      const container = document.getElementById("planeControl");
+      if (!container) return;
+      container.innerHTML = "";
+      [0, 1, 2, 3].forEach(p => {
+        const btn = document.createElement("button");
+        btn.className = "tab-btn plane-btn";
+        btn.dataset.plane = p;
+        btn.textContent = p;
+        btn.title = p === 0 ? "Ground floor" : "Floor " + p;
+        btn.addEventListener("click", () => switchPlane(p));
+        container.appendChild(btn);
+      });
+      renderPlaneButtons();
     }
 
     // Expands an event into the full ordered list of game-coordinate points
@@ -1349,6 +1392,7 @@
       sessions.forEach(session => {
         session.events.forEach(ev => {
           if (ev.ty === "bank" || !ev.f || !ev.t) return;
+          if (ev.f[2] !== currentPlane) return; // only this floor's segments
           const isWalk = ev.ty === "walk";
           const latlngs = eventLatLngs(ev);
 
@@ -1475,6 +1519,7 @@
         for (let i = 0; i + 1 < pts.length; i++) {
           rawSegments.push({
             from: pts[i], to: pts[i + 1], isWalk,
+            plane: ev.t[2], // destination plane - lets playback auto-switch floors
             weight: eventWeight * (legLengths[i] / totalLen)
           });
         }
@@ -1485,7 +1530,7 @@
       const segments = rawSegments.map(s => {
         const startFrac = cumWeight / totalWeight;
         cumWeight += s.weight;
-        return { from: s.from, to: s.to, isWalk: s.isWalk, startFrac, endFrac: cumWeight / totalWeight };
+        return { from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane, startFrac, endFrac: cumWeight / totalWeight };
       });
 
       // Teleport destinations are known the instant a session loads (they're
@@ -1511,6 +1556,10 @@
         const lat = seg.from.lat + (seg.to.lat - seg.from.lat) * segFrac;
         const lng = seg.from.lng + (seg.to.lng - seg.from.lng) * segFrac;
         const latlng = L.latLng(lat, lng);
+
+        if (typeof seg.plane === "number" && seg.plane !== currentPlane) {
+          switchPlane(seg.plane);
+        }
 
         playbackMarker.setLatLng(latlng);
         playbackHalo.setLatLng(latlng);
