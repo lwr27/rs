@@ -1225,7 +1225,9 @@
     // route-data/. Add an entry here for each player once their hash is
     // known (visible in the filename after their first real upload).
     const ROUTE_PLAYERS = [
-      { name: "Lewis (test)", hash: "-8886915111317579996" }
+      { name: "6LR", hash: "-8886915111317579996" },
+      { name: "6JV", hash: "" },
+      { name: "Iron Shiifty", hash: "" }
     ];
 
     function currentYearMonth() {
@@ -1307,17 +1309,6 @@
       // Initial view - set after the map exists, since gameToLatLng needs
       // map.unproject(). Mirrors how Explv calls setView at the end of init.
       leafletMap.setView(gameToLatLng(3221, 3217), 7);
-
-      // Calibration-check tool: click anywhere on the map to see exactly
-      // what game coordinate that pixel corresponds to. Useful for
-      // spot-checking against a known real landmark's coordinates.
-      leafletMap.on("click", (e) => {
-        const g = latLngToGame(e.latlng);
-        L.popup()
-          .setLatLng(e.latlng)
-          .setContent("Game coords here: " + g.x + ", " + g.y)
-          .openOn(leafletMap);
-      });
 
       const closeBtn = document.getElementById("mapCloseBtn");
       if (closeBtn) closeBtn.addEventListener("click", () => {
