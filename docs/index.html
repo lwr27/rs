@@ -1150,103 +1150,50 @@
       });
     }
 
-    // Custom Leaflet CRS: "latlng" units ARE native (zoom-8, i.e. the
-    // original un-resized 13056x45568) source-image pixel coordinates
-    // directly - lat = -pixelY (so north is up), lng = pixelX. Overriding
-    // scale() to 2^(zoom-8) (instead of Leaflet's default 256*2^zoom)
-    // makes latLngToPoint return the exact pixel coordinates at any zoom,
-    // matching exactly how Explv's tile_generator.py built each zoom level
-    // (each step is a plain 2x upscale/downscale of the native image) - so
-    // Leaflet's own zoom levels line up 1:1 with the tile folder names
-    // (3-11) with no separate conversion needed.
-    // Plain, unmodified L.CRS.Simple - no scale()/zoom() override. An earlier
-    // version overrode scale() to directly equal 2^(zoom-8), which deviates
-    // from Leaflet's standard 256*2^zoom convention that internal zoom/pan/
-    // mousewheel math is built around - almost certainly the real cause of
-    // the zoom-anchor drift reported at low zoom. Explv's own live map (the
-    // proven reference implementation) doesn't override scale()/zoom() at
-    // all; instead the "which zoom is native resolution" adjustment is baked
-    // into our own gameToLatLng/latLngToGame conversion below (dividing by
-    // Leaflet's standard scale(8) = 256*2^8 = 65536), keeping the CRS itself
-    // fully standard-compliant.
-    const OSRS_CRS = L.CRS.Simple;
+    // ---- Coordinate system: matching Explv's reference implementation ----
+    //
+    // Critical detail: Explv's map passes NO `crs` option to L.map(), which
+    // means it uses Leaflet's DEFAULT CRS (EPSG3857 / Web Mercator), not
+    // CRS.Simple. Everything below is built on that same assumption, so the
+    // constants and the project/unproject calls line up exactly with his.
+    //
+    // An earlier version here used L.CRS.Simple with a hand-fitted
+    // least-squares calibration. That was a mistake born of a bad check:
+    // Lumbridge's y-pixel (460256) was compared against
+    // MAP_HEIGHT_MAX_ZOOM_PX (364544) and declared "out of bounds", so his
+    // formula was wrongly rejected. But that constant is just the y-flip
+    // offset, NOT a bound - the real bound is the CRS world size at max
+    // zoom, 256 * 2^11 = 524288, and 460256 fits inside it fine. His
+    // formula was correct all along.
+    const MAP_HEIGHT_MAX_ZOOM_PX = 364544;
+    const MAP_WIDTH_MAX_ZOOM_PX = 104448;
+    const RS_TILE_WIDTH_PX = 32, RS_TILE_HEIGHT_PX = 32; // px per game tile at max zoom
+    const RS_OFFSET_X = 1024 - 64; // 960
+    const RS_OFFSET_Y = 6208;
+    const MAP_MIN_ZOOM = 4, MAP_MAX_ZOOM = 11;
 
-    // Game-coordinate calibration, refined via a least-squares fit against
-    // 7 precisely-clicked fairy ring destinations spread across the map
-    // (Zanaris, Ajp, Alp, Akq, Bip, Blp, Bkq - all clicked and reported
-    // in one batch, avoiding the noise of chaining corrections on top of
-    // corrections from earlier rounds). Residuals mostly under 1 tile.
-    // Fitted scale converged to almost exactly 2.000 px/tile on both axes -
-    // consistent with the known 4px/game-tile native resolution halved by
-    // the 50% image resize, a good sign this fit reflects the true
-    // underlying value rather than approximation noise. (Explv's own exact
-    // Position.js formula was tried and rejected here - his hardcoded
-    // constants produce an impossible out-of-bounds result for our
-    // confirmed-correct Lumbridge tile, meaning they're stale relative to
-    // his repo's ongoing map-expansion regenerations over the years and
-    // don't match the tile set we're actually using.) Against the RESIZED
-    // (50%) map image (6528x22784); tiles were cut from the ORIGINAL
-    // full-resolution image (13056x45568, exactly double), so results are
-    // doubled before use.
-    const MAP_X_SCALE = 2.00014, MAP_X_ORIGIN = -1918.81;
-    const MAP_Y_SCALE = 2.00097, MAP_Y_ORIGIN = 25217.49;
-    const LEAFLET_ZOOM8_SCALE = 256; // L.CRS.Simple OVERRIDES scale() to 2^zoom
-                                      // (NOT the base L.CRS's 256*2^zoom), so
-                                      // scale(8) = 2^8 = 256. Using 65536 here
-                                      // shrank every coordinate 256x, clustering
-                                      // all markers at the origin - the bug this
-                                      // fixes. Matches Explv's own approach
-                                      // (project at max zoom against 2^zoom scale).
-    function gameToMapPixels(gameX, gameY) {
-      return {
-        x: (MAP_X_ORIGIN + MAP_X_SCALE * gameX) * 2,
-        y: (MAP_Y_ORIGIN - MAP_Y_SCALE * gameY) * 2
-      };
-    }
+    // Game coords -> Leaflet LatLng. Mirrors Position.toLatLng() exactly.
+    // Requires the map to exist (uses map.unproject), so anything needing a
+    // position before init must be deferred until after initLeafletMap().
     function gameToLatLng(gameX, gameY) {
-      const px = gameToMapPixels(gameX, gameY);
-      return L.latLng(-px.y / LEAFLET_ZOOM8_SCALE, px.x / LEAFLET_ZOOM8_SCALE);
+      const x = ((gameX - RS_OFFSET_X) * RS_TILE_WIDTH_PX) + (RS_TILE_WIDTH_PX / 4);
+      const y = MAP_HEIGHT_MAX_ZOOM_PX - ((gameY - RS_OFFSET_Y) * RS_TILE_HEIGHT_PX);
+      return leafletMap.unproject(L.point(x, y), MAP_MAX_ZOOM);
     }
+
+    // Leaflet LatLng -> game coords. Mirrors Position.fromLatLng() exactly.
     function latLngToGame(latlng) {
-      const px = latlng.lng * LEAFLET_ZOOM8_SCALE, py = -latlng.lat * LEAFLET_ZOOM8_SCALE;
-      return {
-        x: ((px / 2) - MAP_X_ORIGIN) / MAP_X_SCALE,
-        y: (MAP_Y_ORIGIN - (py / 2)) / MAP_Y_SCALE
-      };
+      const point = leafletMap.project(latlng, MAP_MAX_ZOOM);
+      let y = MAP_HEIGHT_MAX_ZOOM_PX - point.y + (RS_TILE_HEIGHT_PX / 4);
+      y = Math.round((y - RS_TILE_HEIGHT_PX) / RS_TILE_HEIGHT_PX) + RS_OFFSET_Y;
+      const x = Math.round((point.x - RS_TILE_WIDTH_PX) / RS_TILE_WIDTH_PX) + RS_OFFSET_X;
+      return { x, y };
     }
 
     let leafletMap = null;
     let currentPlane = 0;
     let planeTileLayer = null;
     let routeLayerGroup = null;
-
-    // Native (zoom-8, full-resolution) image height per plane, in pixels -
-    // needed to compute the TMS y-flip below. Plane 0 confirmed at 45568px
-    // (matches the resized 22784px image x2). Other planes' generated
-    // images may differ in size (e.g. cropped empty space) - add their
-    // real heights here once verified, rather than assuming they match
-    // plane 0.
-    const PLANE_NATIVE_HEIGHT = { 0: 45568 };
-
-    // tile_generator.py saves tiles with row 0 at the BOTTOM of the image
-    // (TMS convention - confirmed against the verified Lumbridge tile,
-    // which only matched the flipped numbering, not Leaflet's default
-    // top-origin scheme). Leaflet's own built-in `tms` option isn't used
-    // here because it infers the total row count from the CRS's tile
-    // range, which isn't reliable for a custom infinite CRS.Simple - so
-    // the flip is computed directly from the real, known image height
-    // instead, matching exactly what the generator script did.
-    const OSRSTileLayer = L.TileLayer.extend({
-      getTileUrl: function (coords) {
-        const z = coords.z;
-        const nativeHeight = PLANE_NATIVE_HEIGHT[currentPlane] || PLANE_NATIVE_HEIGHT[0];
-        const totalRows = Math.ceil(nativeHeight * Math.pow(2, z - 8) / this.options.tileSize);
-        const flippedY = totalRows - coords.y - 1;
-        return L.Util.template(this._url, L.extend({
-          z: z, x: coords.x, y: flippedY
-        }, this.options));
-      }
-    });
 
     // Fetches a 3x3 grid of tiles around a given point at the given zoom
     // via plain Image() requests, ahead of when they're actually needed -
@@ -1259,9 +1206,15 @@
       const tileSize = 256;
       const centerTx = Math.floor(point.x / tileSize);
       const centerTy = Math.floor(point.y / tileSize);
+      // Leaflet's own tms:true flip, replicated for the manual prefetch.
+      const maxTy = Math.pow(2, zoom) - 1;
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
-          const url = planeTileLayer.getTileUrl({ z: zoom, x: centerTx + dx, y: centerTy + dy });
+          const ty = maxTy - (centerTy + dy);
+          const url = planeTileLayer._url
+            .replace("{z}", zoom)
+            .replace("{x}", centerTx + dx)
+            .replace("{y}", ty);
           new Image().src = url;
         }
       }
@@ -1325,32 +1278,35 @@
 
     function initLeafletMap() {
       if (leafletMap) return;
+      // Deliberately NO `crs` option - uses Leaflet's default EPSG3857,
+      // exactly as Explv's working map does. The coordinate math above is
+      // built on that assumption. Zoom is constrained on the tile layer
+      // only (also matching his setup), not on the map object.
       leafletMap = L.map("leafletMap", {
-        crs: OSRS_CRS,
-        // No minZoom/maxZoom set on the map itself - matching Explv's actual
-        // working config exactly, which only constrains zoom via the tile
-        // layer's own minZoom/maxZoom, not the map object's. Setting both
-        // (as an earlier version here did) may have interacted with
-        // Leaflet's internal zoom-clamping in a way that produced the
-        // reported jump at a specific zoom-level crossing.
-        zoomControl: false, // added manually below, matching his structure
+        zoomControl: false,
         attributionControl: false,
-        renderer: L.canvas(), // matches his exact renderer choice
-        scrollWheelZoom: true, // explicit: zoom toward the cursor, not center
-        center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
-        zoom: 6                            // required before adding the tile layer
+        renderer: L.canvas()
       });
       L.control.zoom().addTo(leafletMap);
-      planeTileLayer = new OSRSTileLayer("https://lwr27.github.io/rs-map-tiles/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
-        tileSize: 256,
-        minZoom: 3,
-        maxZoom: 11,
-        noWrap: false,
+
+      planeTileLayer = L.tileLayer(
+        "https://lwr27.github.io/rs-map-tiles/tiles/" + currentPlane + "/{z}/{x}/{y}.png", {
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
+        noWrap: true,
+        tms: true, // tiles are stored bottom-row-first; with the default CRS
+                    // Leaflet's own tms flip works correctly, so the custom
+                    // getTileUrl subclass used previously is no longer needed
         keepBuffer: 6 // preload a wider ring of tiles around the visible area,
                        // so nearby pans/jumps are more likely to already have
                        // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
+
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
+
+      // Initial view - set after the map exists, since gameToLatLng needs
+      // map.unproject(). Mirrors how Explv calls setView at the end of init.
+      leafletMap.setView(gameToLatLng(3221, 3217), 7);
 
       // Calibration-check tool: click anywhere on the map to see exactly
       // what game coordinate that pixel corresponds to. Useful for
@@ -1359,7 +1315,7 @@
         const g = latLngToGame(e.latlng);
         L.popup()
           .setLatLng(e.latlng)
-          .setContent("Game coords here: " + g.x.toFixed(1) + ", " + g.y.toFixed(1))
+          .setContent("Game coords here: " + g.x + ", " + g.y)
           .openOn(leafletMap);
       });
 
