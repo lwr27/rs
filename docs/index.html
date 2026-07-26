@@ -1332,10 +1332,13 @@
         zoomControl: true,
         attributionControl: false,
         scrollWheelZoom: true, // explicit: zoom toward the cursor, not center
-        zoomSnap: 0,   // continuous fractional zoom - avoids the big, jarring
-                        // whole-level jumps that made zooming out feel like it
-                        // was "struggling"/lurching to the wrong place
-        zoomDelta: 0.5, // gentler step for the +/- buttons to match
+        // zoomSnap left at Leaflet's default (1) - continuous fractional zoom
+        // (zoomSnap:0) was tried here, but our tile pyramid only has whole
+        // integer zoom levels (3-11); fractional zoom meant Leaflet had to
+        // swap and CSS-rescale the entire displayed tile set right at each
+        // integer crossing, which is exactly what "jumps at a specific zoom
+        // level" looks like. Matches Explv's own untouched config, which
+        // never sets zoomSnap/zoomDelta at all.
         center: gameToLatLng(3221.5, 3217), // Lumbridge - a valid initial view is
         zoom: 6                            // required before adding the tile layer
       });
