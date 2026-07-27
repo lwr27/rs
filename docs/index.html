@@ -275,6 +275,7 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="skills">Skills</button>
+    <button class="tab-btn" data-tab="map">Map</button>
     <button class="tab-btn" data-tab="luck">5JV: Corrupted Gauntlet <span class="tab-tick">✓</span></button>
     <button class="tab-btn" data-tab="rangerluck">6LR: Ranger Boots</button>
   </div>
@@ -302,7 +303,7 @@
         <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶</button>
         <button id="stepFwdBtn" class="tab-btn" style="padding:6px 10px;">⏭</button>
         <input id="sessionScrubber" type="range" min="0" max="1000" value="0" style="width:180px;" />
-        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:60px;"></span>
+        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; font-variant-numeric:tabular-nums;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
     </div>
@@ -338,6 +339,17 @@
       const h = Math.round(m / 60);
       if (h < 24) return h + "h ago";
       return Math.round(h / 24) + "d ago";
+    }
+    // Formats a duration in seconds as m:ss or h:mm:ss, used for the map
+    // playback bar's real elapsed/total session time readout.
+    function formatDuration(totalSeconds) {
+      totalSeconds = Math.max(0, Math.round(totalSeconds));
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      const ss = String(s).padStart(2, "0");
+      if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + ss;
+      return m + ":" + ss;
     }
 
     // Standard OSRS xp-for-level table (levels 1-99)
@@ -474,17 +486,16 @@
 
       col.appendChild(panel);
 
-      // Combat level + total XP odometer strip. The combat number is a
-      // deliberately unmarked entry point into the map panel - it calls
-      // showMapPanel() directly (there is no visible Map tab button in the
-      // DOM) and otherwise looks/behaves like a plain stat (cursor: default,
-      // no visual affordance that it's clickable).
+      // Combat level + total XP odometer strip. The map used to be reached
+      // only by clicking this Combat stat (a hidden, unmarked entry point) -
+      // it's now a normal tab in the top nav (see the "map" tab button),
+      // so this is just a plain stat display again.
       const combatLevel = computeCombatLevel(player.stats);
       const totalXp = (player.stats.Overall && player.stats.Overall.xp) || 0;
       const statsStrip = document.createElement("div");
       statsStrip.className = "player-stats-strip";
       statsStrip.innerHTML =
-        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val" style="cursor:default" onclick="showMapPanel()">' + combatLevel + '</span></div>' +
+        '<div class="pss-item"><span class="pss-label">Combat</span><span class="pss-val">' + combatLevel + '</span></div>' +
         '<div class="pss-item"><span class="pss-label">Total XP</span><span class="pss-val odometer">0</span></div>';
       col.appendChild(statsStrip);
       animateOdometer(statsStrip.querySelector(".odometer"), totalXp, 1200);
@@ -1111,30 +1122,12 @@
         '</div>';
     }
 
-    function initTabs() {
-      // Scoped to .tabs .tab-btn specifically - the map panel's Close/Play
-      // buttons reuse the .tab-btn class purely for matching styling, but
-      // have no data-tab attribute and must never be treated as tab
-      // switches (that previously caused a crash: getElementById("panel-
-      // undefined") returns null, then .classList throws).
-      document.querySelectorAll(".tabs .tab-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-          document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("active"));
-          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-          btn.classList.add("active");
-          document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
-        });
-      });
-    }
-
-    // Hidden entry point into the map panel, triggered only by clicking the
-    // Combat stat (see renderColumn). There is no visible tab button for
-    // this - it deactivates whichever tab is currently showing and reveals
-    // panel-map directly.
-    function showMapPanel() {
-      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-      document.getElementById("panel-map").classList.add("active");
+    // Runs whenever the Map tab becomes active: makes sure Leaflet is
+    // initialized (it can't be set up while the panel was display:none,
+    // since a zero-size container breaks its internal size/position
+    // calculations), resizes it to fit, and positions the view on whatever
+    // session is currently loaded (or a default overview if none yet).
+    function activateMapPanel() {
       requestAnimationFrame(() => {
         initLeafletMap();
         leafletMap.invalidateSize();
@@ -1149,6 +1142,23 @@
         // zoom-around-cursor calculation after that anchors to the wrong
         // point, which looks exactly like zooming jumping to the wrong tile.
         setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
+      });
+    }
+
+    function initTabs() {
+      // Scoped to .tabs .tab-btn specifically - the map panel's Close/Play
+      // buttons reuse the .tab-btn class purely for matching styling, but
+      // have no data-tab attribute and must never be treated as tab
+      // switches (that previously caused a crash: getElementById("panel-
+      // undefined") returns null, then .classList throws).
+      document.querySelectorAll(".tabs .tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+          if (btn.dataset.tab === "map") activateMapPanel();
+        });
       });
     }
 
@@ -1442,8 +1452,6 @@
         if (frac >= 1) {
           activePlayback.paused = true;
           setPlayButtonIcon(true);
-          const statusEl = document.getElementById("sessionStatus");
-          if (statusEl) statusEl.textContent = "Done";
         }
       }
       requestAnimationFrame(globalPlaybackTick);
@@ -1496,10 +1504,22 @@
         return;
       }
 
+      // Real-world session time span (used for the elapsed/total readout,
+      // completely separate from PLAYBACK_MS above which is just how long
+      // the on-screen animation takes). Teleports are treated as
+      // instantaneous in real time too, same as they are in-game.
+      const t0 = events[0].s;
+      const lastEv = events[events.length - 1];
+      const lastEvEnd = lastEv.ty === "walk" ? (lastEv.e != null ? lastEv.e : lastEv.s) : lastEv.s;
+      const t1 = Math.max(t0 + 1, lastEvEnd);
+
       // Each event expands into one sub-segment per leg of its path,
       // weighted by real duration/type and split proportionally to leg
       // length, so the marker traces the real route shape at a roughly
-      // consistent speed rather than cutting corners or lurching.
+      // consistent speed rather than cutting corners or lurching. Each
+      // sub-segment also carries its own slice of real session time
+      // (realFrom/realTo), distributed the same proportional way, so the
+      // elapsed-time readout advances in step with the animation.
       const rawSegments = [];
       events.forEach(ev => {
         const isWalk = ev.ty === "walk";
@@ -1507,6 +1527,8 @@
           ? Math.min(MAX_WALK_WEIGHT, Math.max(1, (ev.e || ev.s) - ev.s))
           : TP_WEIGHT;
         const pts = eventLatLngs(ev);
+        const evRealStart = ev.s;
+        const evRealEnd = isWalk ? (ev.e != null ? ev.e : ev.s) : ev.s;
 
         const legLengths = [];
         let totalLen = 0;
@@ -1516,11 +1538,17 @@
           legLengths.push(len);
           totalLen += len;
         }
+        let cumLen = 0;
         for (let i = 0; i + 1 < pts.length; i++) {
+          const lenBefore = cumLen;
+          cumLen += legLengths[i];
+          const lenAfter = cumLen;
           rawSegments.push({
             from: pts[i], to: pts[i + 1], isWalk,
             plane: ev.t[2], // destination plane - lets playback auto-switch floors
-            weight: eventWeight * (legLengths[i] / totalLen)
+            weight: eventWeight * (legLengths[i] / totalLen),
+            realFrom: evRealStart + (evRealEnd - evRealStart) * (lenBefore / totalLen),
+            realTo: evRealStart + (evRealEnd - evRealStart) * (lenAfter / totalLen)
           });
         }
       });
@@ -1530,7 +1558,11 @@
       const segments = rawSegments.map(s => {
         const startFrac = cumWeight / totalWeight;
         cumWeight += s.weight;
-        return { from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane, startFrac, endFrac: cumWeight / totalWeight };
+        return {
+          from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane,
+          startFrac, endFrac: cumWeight / totalWeight,
+          realFrom: s.realFrom, realTo: s.realTo
+        };
       });
 
       // Teleport destinations are known the instant a session loads (they're
@@ -1541,10 +1573,11 @@
       segments.filter(s => !s.isWalk).forEach(s => preloadTilesAround(s.to, FOLLOW_ZOOM));
 
       // Positions the marker/halo/camera for a given fraction (0-1) through
-      // the route. Shared by every control (play loop, scrubber, step
-      // buttons) so there's one source of truth for "where is the route at
-      // frac X". Teleports snap the camera instantly (it's a jump, not
-      // travel); walks pan smoothly.
+      // the route, and updates the elapsed/total real-time readout to
+      // match. Shared by every control (play loop, scrubber, step buttons)
+      // so there's one source of truth for "where is the route at frac X".
+      // Teleports snap the camera instantly (it's a jump, not travel);
+      // walks pan smoothly.
       function seekTo(frac, snapCamera) {
         frac = Math.min(1, Math.max(0, frac));
         let seg = segments[segments.length - 1];
@@ -1571,7 +1604,10 @@
           leafletMap.panTo(latlng, { animate: true, duration: 0.15, easeLinearity: 1 });
         }
 
-        if (statusEl) statusEl.textContent = Math.round(frac * 100) + "%";
+        const realTime = seg.realFrom + (seg.realTo - seg.realFrom) * segFrac;
+        const elapsedSec = realTime - t0;
+        const totalSec = t1 - t0;
+        if (statusEl) statusEl.textContent = formatDuration(elapsedSec) + " / " + formatDuration(totalSec);
         if (scrubber) scrubber.value = Math.round(frac * 1000);
       }
 
@@ -1626,11 +1662,11 @@
     async function loadAndRenderPlayer(hash) {
       currentSessions = await fetchPlayerSessions(hash);
       populateSessionSelect(currentSessions);
-      // Route drawing and playback positioning are deferred to showMapPanel
-      // (via loadSelectedSession) rather than triggered here - at page load
-      // the map panel is still display:none, and initializing Leaflet
-      // against a hidden, zero-size container breaks its tile/position
-      // calculations.
+      // Route drawing and playback positioning are deferred to
+      // activateMapPanel (via loadSelectedSession) rather than triggered
+      // here - at page load the map panel is still display:none, and
+      // initializing Leaflet against a hidden, zero-size container breaks
+      // its tile/position calculations.
     }
 
     // Loads whichever session is currently selected in the dropdown (or
