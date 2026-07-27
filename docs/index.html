@@ -262,12 +262,6 @@
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
   }
-
-  /* Brief dip during a teleport camera snap - masks any tile pop-in the
-     prefetching doesn't fully hide behind a quick fade instead of a hard
-     visible cut from old tiles to new ones. */
-  #leafletMap { transition: opacity 110ms ease; }
-  #leafletMap.tp-flash { opacity: 0.45; }
 </style>
 </head>
 <body>
@@ -1487,18 +1481,6 @@
     }
     requestAnimationFrame(globalPlaybackTick);
 
-    // Briefly dips map opacity and restores it - see the .tp-flash CSS rule.
-    // Purely cosmetic cover for any tile pop-in the prefetch didn't
-    // preempt in time; does nothing to the actual load itself.
-    let flashTimeout = null;
-    function flashTeleportLanding() {
-      const el = document.getElementById("leafletMap");
-      if (!el) return;
-      el.classList.add("tp-flash");
-      clearTimeout(flashTimeout);
-      flashTimeout = setTimeout(() => el.classList.remove("tp-flash"), 140);
-    }
-
     function setPlayButtonIcon(showPlay) {
       const btn = document.getElementById("sessionPlayBtn");
       if (btn) btn.textContent = showPlay ? "▶" : "⏸";
@@ -1650,11 +1632,6 @@
 
         const shouldSnap = snapCamera || !seg.isWalk;
         if (shouldSnap) {
-          // Actual teleports (not scrubber/step jumps) get a quick fade -
-          // scrubbing/stepping shouldn't flash on every drag, only a real
-          // in-session teleport landing on a spot that might still be
-          // mid-load despite the prefetch.
-          if (!seg.isWalk && !snapCamera) flashTeleportLanding();
           leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), FOLLOW_ZOOM), { animate: false });
         } else {
           leafletMap.panTo(latlng, { animate: true, duration: 0.15, easeLinearity: 1 });
