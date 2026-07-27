@@ -1232,8 +1232,8 @@
       const centerTy = Math.floor(point.y / tileSize);
       // Leaflet's own tms:true flip, replicated for the manual prefetch.
       const maxTy = Math.pow(2, zoom) - 1;
-      for (let dx = -2; dx <= 2; dx++) {
-        for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dy = -3; dy <= 3; dy++) {
           const ty = maxTy - (centerTy + dy);
           const url = planeTileLayer._url
             .replace("{z}", zoom)
@@ -1246,13 +1246,21 @@
       }
     }
 
-    // Preloads a teleport destination across FOLLOW_ZOOM and one level
-    // either side, so the snap looks right whether the viewer is zoomed in
-    // past FOLLOW_ZOOM or sitting right on it.
+    // Preloads a teleport destination across FOLLOW_ZOOM, one level either
+    // side, AND whatever zoom the map is actually sitting at right now (if
+    // different) - the camera snap uses Math.max(currentZoom, FOLLOW_ZOOM),
+    // so a viewer already zoomed in past FOLLOW_ZOOM lands there instead,
+    // and that zoom level wouldn't otherwise get prefetched at all.
     function preloadTeleportDestination(latlng, followZoom) {
-      preloadTilesAround(latlng, followZoom, "high");
-      preloadTilesAround(latlng, followZoom - 1, "low");
-      preloadTilesAround(latlng, followZoom + 1, "low");
+      const zooms = new Set([followZoom - 1, followZoom, followZoom + 1]);
+      if (leafletMap) {
+        const liveZoom = Math.round(leafletMap.getZoom());
+        zooms.add(liveZoom);
+      }
+      zooms.forEach(z => {
+        if (z < MAP_MIN_ZOOM || z > MAP_MAX_ZOOM) return;
+        preloadTilesAround(latlng, z, z === followZoom ? "high" : "low");
+      });
     }
 
     // Known route-tracker players, keyed by their RuneLite account hash -
@@ -1456,25 +1464,88 @@
     let playbackMarker = null;
     let playbackHalo = null;
 
+    // How long a teleport's swirl animation plays before the camera
+    // actually jumps. Deliberately doubles as a buffer: the destination's
+    // tiles are already being prefetched the instant the session loads, so
+    // this pause gives them a bit more real time to land before the player
+    // sees the new location, instead of it being visible mid-load.
+    const TELEPORT_FLASH_MS = 380;
+
+    // Finds which segment a given playback fraction (0-1) falls in. Shared
+    // by seekTo (for positioning) and globalPlaybackTick (for detecting
+    // when organic forward playback is about to cross into a new segment).
+    function findSegmentIndex(segments, frac) {
+      for (let i = 0; i < segments.length; i++) {
+        if (frac >= segments[i].startFrac && frac < segments[i].endFrac) return i;
+      }
+      return segments.length - 1;
+    }
+
+    // Plays a brief expanding/fading ring at the given position, mimicking
+    // an OSRS-style teleport swirl. Purely cosmetic on its own, but used
+    // alongside pausing the playback clock (see globalPlaybackTick) so the
+    // destination's tiles get a bit longer to finish loading before the
+    // camera actually snaps there.
+    function playTeleportFlash(latlng) {
+      if (!leafletMap) return;
+      const start = performance.now();
+      const ring = L.circleMarker(latlng, {
+        radius: 6, color: "#fff", weight: 2, fillColor: "#8ecbff", fillOpacity: 0.6
+      }).addTo(leafletMap);
+      function tick(now) {
+        const t = Math.min(1, (now - start) / TELEPORT_FLASH_MS);
+        ring.setRadius(6 + t * 22);
+        ring.setStyle({ opacity: 1 - t, fillOpacity: 0.6 * (1 - t) });
+        if (t < 1) {
+          requestAnimationFrame(tick);
+        } else {
+          leafletMap.removeLayer(ring);
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
     function globalPlaybackTick(now) {
       if (lastFrameTime === null) lastFrameTime = now;
       const dt = now - lastFrameTime;
       lastFrameTime = now;
 
       if (activePlayback && !activePlayback.paused) {
-        activePlayback.elapsedMs = Math.min(
-          activePlayback.PLAYBACK_MS,
-          activePlayback.elapsedMs + dt
-        );
-        const frac = activePlayback.elapsedMs / activePlayback.PLAYBACK_MS;
-        activePlayback.seekTo(frac, false);
-        if (playbackHalo) {
-          playbackHalo.setRadius(9 + Math.sin(activePlayback.elapsedMs / 180) * 3);
-        }
+        if (activePlayback.flashing) {
+          // Frozen mid-teleport-swirl - hold position, don't advance the
+          // clock, until the flash's own timeout clears this flag.
+        } else {
+          const prospectiveMs = Math.min(
+            activePlayback.PLAYBACK_MS,
+            activePlayback.elapsedMs + dt
+          );
+          const prospectiveFrac = prospectiveMs / activePlayback.PLAYBACK_MS;
+          const idx = findSegmentIndex(activePlayback.segments, prospectiveFrac);
+          const enteringNewTeleport =
+            idx !== activePlayback.lastAnnouncedSegIndex &&
+            activePlayback.lastAnnouncedSegIndex !== -1 &&
+            !activePlayback.segments[idx].isWalk;
 
-        if (frac >= 1) {
-          activePlayback.paused = true;
-          setPlayButtonIcon(true);
+          if (enteringNewTeleport) {
+            activePlayback.flashing = true;
+            playTeleportFlash(playbackMarker.getLatLng());
+            setTimeout(() => {
+              activePlayback.lastAnnouncedSegIndex = idx;
+              activePlayback.flashing = false;
+              lastFrameTime = null; // avoid a dt jump from time spent flashing
+            }, TELEPORT_FLASH_MS);
+          } else {
+            activePlayback.elapsedMs = prospectiveMs;
+            activePlayback.lastAnnouncedSegIndex = idx;
+            activePlayback.seekTo(prospectiveFrac, false);
+            if (playbackHalo) {
+              playbackHalo.setRadius(9 + Math.sin(activePlayback.elapsedMs / 180) * 3);
+            }
+            if (prospectiveFrac >= 1) {
+              activePlayback.paused = true;
+              setPlayButtonIcon(true);
+            }
+          }
         }
       }
       requestAnimationFrame(globalPlaybackTick);
@@ -1602,7 +1673,7 @@
       // earliest teleports' tiles land first, since they're needed first.
       const teleportSegments = segments.filter(s => !s.isWalk);
       teleportSegments.forEach((s, i) => {
-        setTimeout(() => preloadTeleportDestination(s.to, FOLLOW_ZOOM), i * 60);
+        setTimeout(() => preloadTeleportDestination(s.to, FOLLOW_ZOOM), i * 20);
       });
 
       // Positions the marker/halo/camera for a given fraction (0-1) through
@@ -1613,10 +1684,8 @@
       // walks pan smoothly.
       function seekTo(frac, snapCamera) {
         frac = Math.min(1, Math.max(0, frac));
-        let seg = segments[segments.length - 1];
-        for (let i = 0; i < segments.length; i++) {
-          if (frac >= segments[i].startFrac && frac < segments[i].endFrac) { seg = segments[i]; break; }
-        }
+        const idx = findSegmentIndex(segments, frac);
+        const seg = segments[idx];
         const segFrac = Math.min(1, Math.max(0,
           (frac - seg.startFrac) / Math.max(0.0001, seg.endFrac - seg.startFrac)));
         const lat = seg.from.lat + (seg.to.lat - seg.from.lat) * segFrac;
@@ -1644,8 +1713,12 @@
         if (scrubber) scrubber.value = Math.round(frac * 1000);
       }
 
-      activePlayback = { PLAYBACK_MS, seekTo, segments, elapsedMs: 0, paused: true };
+      activePlayback = {
+        PLAYBACK_MS, seekTo, segments, elapsedMs: 0, paused: true,
+        lastAnnouncedSegIndex: -1, flashing: false
+      };
       seekTo(0, true);
+      activePlayback.lastAnnouncedSegIndex = findSegmentIndex(segments, 0);
       setPlayButtonIcon(true);
     }
 
@@ -1655,26 +1728,33 @@
       if (!activePlayback) return;
       if (activePlayback.elapsedMs >= activePlayback.PLAYBACK_MS) {
         activePlayback.elapsedMs = 0;
+        activePlayback.lastAnnouncedSegIndex = findSegmentIndex(activePlayback.segments, 0);
+        activePlayback.flashing = false;
       }
       activePlayback.paused = !activePlayback.paused;
       lastFrameTime = null; // avoid a large dt jump from time spent paused
       setPlayButtonIcon(activePlayback.paused);
     }
 
-    // Steps to the previous/next event-leg boundary and pauses there.
+    // Steps to the previous/next event-leg boundary and pauses there. A
+    // manual step is a deliberate jump, not organic forward playback - it
+    // always uses snapCamera (no fade delay) and updates
+    // lastAnnouncedSegIndex directly so resuming play from here won't
+    // immediately think it just "arrived" at a teleport and flash again.
     function stepFrame(direction) {
       if (!activePlayback) return;
       activePlayback.paused = true;
+      activePlayback.flashing = false;
       setPlayButtonIcon(true);
-      const frac = activePlayback.elapsedMs / activePlayback.PLAYBACK_MS;
+      const targetIndex = Math.min(
+        activePlayback.segments.length - 1,
+        Math.max(0, findSegmentIndex(activePlayback.segments,
+          activePlayback.elapsedMs / activePlayback.PLAYBACK_MS) + direction)
+      );
       const segs = activePlayback.segments;
-      let currentIndex = segs.length - 1;
-      for (let i = 0; i < segs.length; i++) {
-        if (frac >= segs[i].startFrac && frac < segs[i].endFrac) { currentIndex = i; break; }
-      }
-      const targetIndex = Math.min(segs.length - 1, Math.max(0, currentIndex + direction));
       const targetFrac = direction > 0 ? segs[targetIndex].endFrac : segs[targetIndex].startFrac;
       activePlayback.elapsedMs = targetFrac * activePlayback.PLAYBACK_MS;
+      activePlayback.lastAnnouncedSegIndex = targetIndex;
       activePlayback.seekTo(targetFrac, true);
     }
 
@@ -1773,9 +1853,11 @@
         scrubber.addEventListener("input", () => {
           if (!activePlayback) return;
           activePlayback.paused = true;
+          activePlayback.flashing = false;
           setPlayButtonIcon(true);
           const frac = parseInt(scrubber.value, 10) / 1000;
           activePlayback.elapsedMs = frac * activePlayback.PLAYBACK_MS;
+          activePlayback.lastAnnouncedSegIndex = findSegmentIndex(activePlayback.segments, frac);
           activePlayback.seekTo(frac, true);
         });
       }
