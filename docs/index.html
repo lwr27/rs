@@ -262,6 +262,12 @@
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
   }
+
+  /* Brief dip during a teleport camera snap - masks any tile pop-in the
+     prefetching doesn't fully hide behind a quick fade instead of a hard
+     visible cut from old tiles to new ones. */
+  #leafletMap { transition: opacity 110ms ease; }
+  #leafletMap.tp-flash { opacity: 0.45; }
 </style>
 </head>
 <body>
@@ -1207,12 +1213,24 @@
     let planeTileLayer = null;
     let routeLayerGroup = null;
 
-    // Fetches a 3x3 grid of tiles around a given point at the given zoom
-    // via plain Image() requests, ahead of when they're actually needed -
-    // the browser caches the response, so by the time Leaflet's own tile
-    // layer asks for the same URL (e.g. when a teleport snaps the camera
-    // there) it's often already loaded instead of showing black.
-    function preloadTilesAround(latlng, zoom) {
+    // Fetches a grid of tiles around a given point via plain Image()
+    // requests, ahead of when they're actually needed - the browser caches
+    // the response, so by the time Leaflet's own tile layer asks for the
+    // same URL (e.g. when a teleport snaps the camera there) it's often
+    // already loaded instead of showing black.
+    //
+    // Covers a 5x5 radius (not just 3x3) across a small spread of zoom
+    // levels around the one requested, not just the exact one - the camera
+    // snap uses Math.max(currentZoom, FOLLOW_ZOOM), so if the viewer is
+    // already zoomed in past FOLLOW_ZOOM when a teleport lands, the actual
+    // zoom used for the snap won't match a single fixed prefetch zoom and
+    // Leaflet ends up fetching cold anyway.
+    //
+    // priority controls fetchPriority ("high" for the zoom level actually
+    // matching FOLLOW_ZOOM, "low" for the +/-1 zoom levels either side) so
+    // the browser's connection pool favours the tiles most likely to
+    // actually be needed rather than treating every request equally.
+    function preloadTilesAround(latlng, zoom, priority) {
       if (!planeTileLayer || !leafletMap) return;
       const point = leafletMap.project(latlng, zoom);
       const tileSize = 256;
@@ -1220,16 +1238,27 @@
       const centerTy = Math.floor(point.y / tileSize);
       // Leaflet's own tms:true flip, replicated for the manual prefetch.
       const maxTy = Math.pow(2, zoom) - 1;
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
           const ty = maxTy - (centerTy + dy);
           const url = planeTileLayer._url
             .replace("{z}", zoom)
             .replace("{x}", centerTx + dx)
             .replace("{y}", ty);
-          new Image().src = url;
+          const img = new Image();
+          if (priority) img.fetchPriority = priority; // ignored harmlessly where unsupported
+          img.src = url;
         }
       }
+    }
+
+    // Preloads a teleport destination across FOLLOW_ZOOM and one level
+    // either side, so the snap looks right whether the viewer is zoomed in
+    // past FOLLOW_ZOOM or sitting right on it.
+    function preloadTeleportDestination(latlng, followZoom) {
+      preloadTilesAround(latlng, followZoom, "high");
+      preloadTilesAround(latlng, followZoom - 1, "low");
+      preloadTilesAround(latlng, followZoom + 1, "low");
     }
 
     // Known route-tracker players, keyed by their RuneLite account hash -
@@ -1458,6 +1487,18 @@
     }
     requestAnimationFrame(globalPlaybackTick);
 
+    // Briefly dips map opacity and restores it - see the .tp-flash CSS rule.
+    // Purely cosmetic cover for any tile pop-in the prefetch didn't
+    // preempt in time; does nothing to the actual load itself.
+    let flashTimeout = null;
+    function flashTeleportLanding() {
+      const el = document.getElementById("leafletMap");
+      if (!el) return;
+      el.classList.add("tp-flash");
+      clearTimeout(flashTimeout);
+      flashTimeout = setTimeout(() => el.classList.remove("tp-flash"), 140);
+    }
+
     function setPlayButtonIcon(showPlay) {
       const btn = document.getElementById("sessionPlayBtn");
       if (btn) btn.textContent = showPlay ? "▶" : "⏸";
@@ -1570,7 +1611,17 @@
       // kick off loading their tiles in the background right away - well
       // before playback's near-instant jump reaches that point, so the
       // camera snap is far less likely to land on still-loading black tiles.
-      segments.filter(s => !s.isWalk).forEach(s => preloadTilesAround(s.to, FOLLOW_ZOOM));
+      //
+      // Staggered in playback order (a short delay per teleport) rather
+      // than fired all at once - with several teleports in one session,
+      // firing every request simultaneously means they all compete for the
+      // browser's limited concurrent-connection pool, which can actually
+      // delay the very first (soonest-needed) one. Staggering lets the
+      // earliest teleports' tiles land first, since they're needed first.
+      const teleportSegments = segments.filter(s => !s.isWalk);
+      teleportSegments.forEach((s, i) => {
+        setTimeout(() => preloadTeleportDestination(s.to, FOLLOW_ZOOM), i * 60);
+      });
 
       // Positions the marker/halo/camera for a given fraction (0-1) through
       // the route, and updates the elapsed/total real-time readout to
@@ -1599,6 +1650,11 @@
 
         const shouldSnap = snapCamera || !seg.isWalk;
         if (shouldSnap) {
+          // Actual teleports (not scrubber/step jumps) get a quick fade -
+          // scrubbing/stepping shouldn't flash on every drag, only a real
+          // in-session teleport landing on a spot that might still be
+          // mid-load despite the prefetch.
+          if (!seg.isWalk && !snapCamera) flashTeleportLanding();
           leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), FOLLOW_ZOOM), { animate: false });
         } else {
           leafletMap.panTo(latlng, { animate: true, duration: 0.15, easeLinearity: 1 });
