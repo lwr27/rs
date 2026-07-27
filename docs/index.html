@@ -1527,10 +1527,17 @@
             !activePlayback.segments[idx].isWalk;
 
           if (enteringNewTeleport) {
+            // Commit the crossing right now - both the clock and the
+            // recorded segment index - so the flash genuinely represents
+            // "we've arrived, holding here a beat" rather than leaving the
+            // clock stuck before the crossing. Leaving elapsedMs
+            // uncommitted here was the bug: the next tick would recompute
+            // the same crossing and re-trigger the flash forever.
+            activePlayback.elapsedMs = prospectiveMs;
+            activePlayback.lastAnnouncedSegIndex = idx;
             activePlayback.flashing = true;
             playTeleportFlash(playbackMarker.getLatLng());
             setTimeout(() => {
-              activePlayback.lastAnnouncedSegIndex = idx;
               activePlayback.flashing = false;
               lastFrameTime = null; // avoid a dt jump from time spent flashing
             }, TELEPORT_FLASH_MS);
