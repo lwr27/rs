@@ -1449,6 +1449,27 @@
       return pts;
     }
 
+    // Total tile distance an event covers, computed from its raw game
+    // coordinates (f -> any waypoints -> t), not lat/lng. Used to weight
+    // playback time by actual distance traveled rather than real-world
+    // duration - see the weight formula in loadSessionForPlayback for why.
+    function eventTileDistance(ev) {
+      const xs = [ev.f[0]], ys = [ev.f[1]];
+      if (ev.ty === "walk" && Array.isArray(ev.w)) {
+        for (let i = 0; i + 1 < ev.w.length; i += 2) {
+          xs.push(ev.w[i]);
+          ys.push(ev.w[i + 1]);
+        }
+      }
+      xs.push(ev.t[0]);
+      ys.push(ev.t[1]);
+      let total = 0;
+      for (let i = 0; i + 1 < xs.length; i++) {
+        total += Math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]);
+      }
+      return total;
+    }
+
     // Draws a single session's route as Leaflet polylines - walks as solid
     // blue lines following every recorded waypoint. Teleports have no
     // static line drawn at all - the animated marker itself shows where
@@ -1622,9 +1643,23 @@
       const TP_WEIGHT = 1;         // was 0.15 - too small when several teleports
                                    // followed one long walk, squeezing all of
                                    // them into a near-invisible sliver of playback
-      const MAX_WALK_WEIGHT = 6;   // was 20 - lower cap keeps one long walk from
-                                   // dominating the whole playback even against
-                                   // just a couple of teleports
+      const MIN_WALK_WEIGHT = 0.5; // floor so even a 1-tile walk gets a
+                                   // brief, visible moment rather than
+                                   // vanishing instantly
+      const WALK_WEIGHT_SCALE = 1; // sqrt(tileDistance) * this - tuned so a
+                                   // 36-tile straight walk lands at weight 6,
+                                   // matching the old hard cap's boundary,
+                                   // but taller distances keep growing past
+                                   // it instead of flatlining there. A hard
+                                   // cap made any walk beyond ~36 tiles play
+                                   // at the exact same speed regardless of
+                                   // how much further it actually went -
+                                   // e.g. a 40-tile and a 400-tile straight
+                                   // line would race across the screen
+                                   // equally fast. Square root still tapers
+                                   // off (so one giant walk can't swallow an
+                                   // entire session's playback budget) but
+                                   // never fully stops growing.
 
       const events = session.events.filter(ev =>
         ev && Array.isArray(ev.f) && Array.isArray(ev.t) &&
@@ -1643,18 +1678,23 @@
       const lastEvEnd = lastEv.ty === "walk" ? (lastEv.e != null ? lastEv.e : lastEv.s) : lastEv.s;
       const t1 = Math.max(t0 + 1, lastEvEnd);
 
-      // Each event expands into one sub-segment per leg of its path,
-      // weighted by real duration/type and split proportionally to leg
-      // length, so the marker traces the real route shape at a roughly
-      // consistent speed rather than cutting corners or lurching. Each
-      // sub-segment also carries its own slice of real session time
-      // (realFrom/realTo), distributed the same proportional way, so the
-      // elapsed-time readout advances in step with the animation.
+      // Each event expands into one sub-segment per leg of its path, split
+      // proportionally to leg length so the marker traces the real route
+      // shape rather than cutting corners or lurching. A walk event's
+      // overall weight (how much of the fixed PLAYBACK_MS window it gets)
+      // is based on actual tile distance traveled, NOT real-world
+      // duration - a long straight walk that happened to take a while in
+      // real life still gets playback time proportional to how far it
+      // actually went, so a 40-tile straight line doesn't fly across the
+      // screen at the same pace as a 1-tile step. Each sub-segment also
+      // carries its own slice of real session time (realFrom/realTo),
+      // distributed the same proportional way, so the elapsed-time readout
+      // advances in step with the animation.
       const rawSegments = [];
       events.forEach(ev => {
         const isWalk = ev.ty === "walk";
         const eventWeight = isWalk
-          ? Math.min(MAX_WALK_WEIGHT, Math.max(1, (ev.e || ev.s) - ev.s))
+          ? Math.max(MIN_WALK_WEIGHT, Math.sqrt(eventTileDistance(ev)) * WALK_WEIGHT_SCALE)
           : TP_WEIGHT;
         const pts = eventLatLngs(ev);
         const evRealStart = ev.s;
