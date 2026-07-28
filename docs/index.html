@@ -1207,60 +1207,91 @@
     let planeTileLayer = null;
     let routeLayerGroup = null;
 
+    // Tracks which tile URLs have already been requested or have finished
+    // loading, across the whole page session (not just one route) - avoids
+    // re-requesting the same tiles every time a session revisits a common
+    // spot (e.g. home teleporting five times shouldn't fire five duplicate
+    // fetches for the same five tiles).
+    const requestedTileUrls = new Set();
+    const loadedTileUrls = new Set();
+    // Keeps references to in-flight prefetch Image objects so the browser
+    // can't garbage-collect (and silently abort) an unreferenced image
+    // mid-fetch. Trimmed periodically rather than left to grow forever.
+    let prefetchImageRefs = [];
+
+    // Returns the list of {x, y, z} tile coordinates in a (2*radius+1)
+    // square around a point at a given zoom, with Leaflet's own tms:true
+    // row-flip already applied - i.e. exactly the set of coordinates the
+    // real tile layer would ask for if you panned there.
+    function tileCoordsAround(latlng, zoom, radius) {
+      const point = leafletMap.project(latlng, zoom);
+      const tileSize = 256;
+      const centerTx = Math.floor(point.x / tileSize);
+      const centerTy = Math.floor(point.y / tileSize);
+      const maxTy = Math.pow(2, zoom) - 1;
+      const coords = [];
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          coords.push({ x: centerTx + dx, y: maxTy - (centerTy + dy), z: zoom });
+        }
+      }
+      return coords;
+    }
+
     // Fetches a grid of tiles around a given point via plain Image()
     // requests, ahead of when they're actually needed - the browser caches
     // the response, so by the time Leaflet's own tile layer asks for the
     // same URL (e.g. when a teleport snaps the camera there) it's often
     // already loaded instead of showing black.
     //
-    // Covers a 5x5 radius (not just 3x3) across a small spread of zoom
-    // levels around the one requested, not just the exact one - the camera
-    // snap uses Math.max(currentZoom, FOLLOW_ZOOM), so if the viewer is
-    // already zoomed in past FOLLOW_ZOOM when a teleport lands, the actual
-    // zoom used for the snap won't match a single fixed prefetch zoom and
-    // Leaflet ends up fetching cold anyway.
+    // Uses planeTileLayer.getTileUrl() rather than hand-building the URL -
+    // that's the exact same code path Leaflet's real tile layer uses, so
+    // there's no risk of a subtle mismatch (e.g. crossOrigin handling)
+    // causing the browser to treat the prefetch and the "real" request as
+    // different cache entries and fetch twice.
     //
-    // priority controls fetchPriority ("high" for the zoom level actually
-    // matching FOLLOW_ZOOM, "low" for the +/-1 zoom levels either side) so
-    // the browser's connection pool favours the tiles most likely to
-    // actually be needed rather than treating every request equally.
-    function preloadTilesAround(latlng, zoom, priority) {
-      if (!planeTileLayer || !leafletMap) return;
-      const point = leafletMap.project(latlng, zoom);
-      const tileSize = 256;
-      const centerTx = Math.floor(point.x / tileSize);
-      const centerTy = Math.floor(point.y / tileSize);
-      // Leaflet's own tms:true flip, replicated for the manual prefetch.
-      const maxTy = Math.pow(2, zoom) - 1;
-      for (let dx = -3; dx <= 3; dx++) {
-        for (let dy = -3; dy <= 3; dy++) {
-          const ty = maxTy - (centerTy + dy);
-          const url = planeTileLayer._url
-            .replace("{z}", zoom)
-            .replace("{x}", centerTx + dx)
-            .replace("{y}", ty);
-          const img = new Image();
-          if (priority) img.fetchPriority = priority; // ignored harmlessly where unsupported
-          img.src = url;
-        }
-      }
+    // Returns the list of URLs requested, so callers can later check
+    // loadedTileUrls to see whether they've actually finished.
+    function preloadTilesAround(latlng, zoom, radius, priority) {
+      if (!planeTileLayer || !leafletMap) return [];
+      const coords = tileCoordsAround(latlng, zoom, radius);
+      const urls = coords.map(c => planeTileLayer.getTileUrl(c));
+      urls.forEach(url => {
+        if (requestedTileUrls.has(url)) return; // already fetched or in flight
+        requestedTileUrls.add(url);
+        const img = new Image();
+        if (priority) img.fetchPriority = priority; // ignored harmlessly where unsupported
+        img.onload = () => loadedTileUrls.add(url);
+        img.onerror = () => loadedTileUrls.add(url); // don't hang forever on a missing tile
+        img.src = url;
+        prefetchImageRefs.push(img);
+      });
+      // Cap how many stale references we hang onto - old sessions'
+      // prefetches are long since resolved by the time this grows large.
+      if (prefetchImageRefs.length > 2000) prefetchImageRefs = prefetchImageRefs.slice(-1000);
+      return urls;
     }
 
-    // Preloads a teleport destination across FOLLOW_ZOOM, one level either
-    // side, AND whatever zoom the map is actually sitting at right now (if
-    // different) - the camera snap uses Math.max(currentZoom, FOLLOW_ZOOM),
+    // Preloads a teleport destination across FOLLOW_ZOOM (wide radius,
+    // high priority - this is the zoom actually used for the vast
+    // majority of snaps) plus a narrower radius at one zoom level either
+    // side and whatever zoom the map is actually sitting at right now, if
+    // different - the camera snap uses Math.max(currentZoom, FOLLOW_ZOOM),
     // so a viewer already zoomed in past FOLLOW_ZOOM lands there instead,
     // and that zoom level wouldn't otherwise get prefetched at all.
+    //
+    // Returns the FOLLOW_ZOOM URL list specifically, so playback can check
+    // whether the tiles actually used for the snap are ready yet.
     function preloadTeleportDestination(latlng, followZoom) {
-      const zooms = new Set([followZoom - 1, followZoom, followZoom + 1]);
+      const primaryUrls = preloadTilesAround(latlng, followZoom, 3, "high");
+      [followZoom - 1, followZoom + 1].forEach(z => {
+        if (z >= MAP_MIN_ZOOM && z <= MAP_MAX_ZOOM) preloadTilesAround(latlng, z, 1, "low");
+      });
       if (leafletMap) {
         const liveZoom = Math.round(leafletMap.getZoom());
-        zooms.add(liveZoom);
+        if (liveZoom !== followZoom) preloadTilesAround(latlng, liveZoom, 2, "low");
       }
-      zooms.forEach(z => {
-        if (z < MAP_MIN_ZOOM || z > MAP_MAX_ZOOM) return;
-        preloadTilesAround(latlng, z, z === followZoom ? "high" : "low");
-      });
+      return primaryUrls;
     }
 
     // Known route-tracker players, keyed by their RuneLite account hash -
@@ -1342,7 +1373,7 @@
         tms: true, // tiles are stored bottom-row-first; with the default CRS
                     // Leaflet's own tms flip works correctly, so the custom
                     // getTileUrl subclass used previously is no longer needed
-        keepBuffer: 6 // preload a wider ring of tiles around the visible area,
+        keepBuffer: 8 // preload a wider ring of tiles around the visible area,
                        // so nearby pans/jumps are more likely to already have
                        // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
@@ -1464,12 +1495,13 @@
     let playbackMarker = null;
     let playbackHalo = null;
 
-    // How long a teleport's swirl animation plays before the camera
-    // actually jumps. Deliberately doubles as a buffer: the destination's
-    // tiles are already being prefetched the instant the session loads, so
-    // this pause gives them a bit more real time to land before the player
-    // sees the new location, instead of it being visible mid-load.
-    const TELEPORT_FLASH_MS = 380;
+    // The teleport swirl always plays at least this long (so it reads as a
+    // deliberate beat, not a flicker) but never longer than this even if
+    // tiles are still loading - actual duration in between is driven by
+    // whether the destination's tiles have genuinely finished loading yet
+    // (see the polling check in globalPlaybackTick below).
+    const TELEPORT_FLASH_MIN_MS = 220;
+    const TELEPORT_FLASH_MAX_MS = 800;
 
     // Finds which segment a given playback fraction (0-1) falls in. Shared
     // by seekTo (for positioning) and globalPlaybackTick (for detecting
@@ -1493,7 +1525,7 @@
         radius: 6, color: "#fff", weight: 2, fillColor: "#8ecbff", fillOpacity: 0.6
       }).addTo(leafletMap);
       function tick(now) {
-        const t = Math.min(1, (now - start) / TELEPORT_FLASH_MS);
+        const t = Math.min(1, (now - start) / TELEPORT_FLASH_MIN_MS);
         ring.setRadius(6 + t * 22);
         ring.setStyle({ opacity: 1 - t, fillOpacity: 0.6 * (1 - t) });
         if (t < 1) {
@@ -1512,8 +1544,16 @@
 
       if (activePlayback && !activePlayback.paused) {
         if (activePlayback.flashing) {
-          // Frozen mid-teleport-swirl - hold position, don't advance the
-          // clock, until the flash's own timeout clears this flag.
+          // Holding mid-teleport-swirl. Clears itself below once either
+          // the destination's tiles are confirmed loaded (after at least
+          // the minimum beat, so it never reads as a flicker) or the max
+          // cap is hit regardless - whichever comes first.
+          const elapsed = now - activePlayback.flashStart;
+          const urls = activePlayback.flashTileUrls;
+          const tilesReady = !!urls && urls.every(u => loadedTileUrls.has(u));
+          if (elapsed >= TELEPORT_FLASH_MIN_MS && (tilesReady || elapsed >= TELEPORT_FLASH_MAX_MS)) {
+            activePlayback.flashing = false;
+          }
         } else {
           const prospectiveMs = Math.min(
             activePlayback.PLAYBACK_MS,
@@ -1536,11 +1576,9 @@
             activePlayback.elapsedMs = prospectiveMs;
             activePlayback.lastAnnouncedSegIndex = idx;
             activePlayback.flashing = true;
+            activePlayback.flashStart = now;
+            activePlayback.flashTileUrls = activePlayback.segments[idx].tileUrls;
             playTeleportFlash(playbackMarker.getLatLng());
-            setTimeout(() => {
-              activePlayback.flashing = false;
-              lastFrameTime = null; // avoid a dt jump from time spent flashing
-            }, TELEPORT_FLASH_MS);
           } else {
             activePlayback.elapsedMs = prospectiveMs;
             activePlayback.lastAnnouncedSegIndex = idx;
@@ -1662,7 +1700,8 @@
         return {
           from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane,
           startFrac, endFrac: cumWeight / totalWeight,
-          realFrom: s.realFrom, realTo: s.realTo
+          realFrom: s.realFrom, realTo: s.realTo,
+          tileUrls: null // populated below for teleport segments only
         };
       });
 
@@ -1678,9 +1717,15 @@
       // browser's limited concurrent-connection pool, which can actually
       // delay the very first (soonest-needed) one. Staggering lets the
       // earliest teleports' tiles land first, since they're needed first.
+      //
+      // Each segment's FOLLOW_ZOOM tile URLs are recorded on it too, so the
+      // teleport-swirl flash can later check real load state via
+      // loadedTileUrls instead of guessing a fixed duration.
       const teleportSegments = segments.filter(s => !s.isWalk);
       teleportSegments.forEach((s, i) => {
-        setTimeout(() => preloadTeleportDestination(s.to, FOLLOW_ZOOM), i * 20);
+        setTimeout(() => {
+          s.tileUrls = preloadTeleportDestination(s.to, FOLLOW_ZOOM);
+        }, i * 20);
       });
 
       // Positions the marker/halo/camera for a given fraction (0-1) through
