@@ -296,14 +296,12 @@
     <div style="position:fixed; inset:0; z-index:1000; background:#000;">
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
       <div id="planeControl" style="position:absolute; top:10px; left:70px; z-index:1001; display:flex; gap:4px; background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--panel-border);"></div>
-      <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
-        <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
-        <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem;"></select>
-        <button id="stepBackBtn" class="tab-btn" style="padding:6px 10px;">⏮</button>
-        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px;">▶</button>
-        <button id="stepFwdBtn" class="tab-btn" style="padding:6px 10px;">⏭</button>
-        <input id="sessionScrubber" type="range" min="0" max="1000" value="0" style="width:180px;" />
-        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; font-variant-numeric:tabular-nums;"></span>
+      <div style="position:absolute; bottom:10px; left:10px; right:10px; z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
+        <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
+        <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
+        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px; flex-shrink:0;">▶</button>
+        <input id="sessionScrubber" type="range" min="0" max="1000" value="0" style="flex:1 1 auto; min-width:0;" />
+        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
     </div>
@@ -1844,8 +1842,6 @@
       const playerSelect = document.getElementById("playerSelect");
       const playBtn = document.getElementById("sessionPlayBtn");
       const sessionSelect = document.getElementById("sessionSelect");
-      const stepBackBtn = document.getElementById("stepBackBtn");
-      const stepFwdBtn = document.getElementById("stepFwdBtn");
 
       if (playerSelect) {
         playerSelect.innerHTML = "";
@@ -1885,9 +1881,6 @@
         }
         playPause();
       });
-
-      if (stepBackBtn) stepBackBtn.addEventListener("click", () => stepFrame(-1));
-      if (stepFwdBtn) stepFwdBtn.addEventListener("click", () => stepFrame(1));
 
       // The scrubber only needs to pause + seek on drag - the always-running
       // global playback loop naturally continues from wherever elapsedMs
