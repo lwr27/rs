@@ -1452,37 +1452,30 @@
     }
 
     // Draws a single session's route as Leaflet polylines - walks as solid
-    // blue lines following every recorded waypoint, teleports as dashed
-    // orange lines with a small marker at the jump's origin.
+    // blue lines following every recorded waypoint. Teleports have no
+    // static line drawn at all - the animated marker itself shows where
+    // teleports go during playback, rather than a separate always-visible
+    // connector line.
     function renderSessionPath(sessions) {
       if (!routeLayerGroup) return;
       routeLayerGroup.clearLayers();
 
       const WALK_COLOR = "#4f8ef0";
-      const TP_COLOR = "#ff9f43";
 
       sessions.forEach(session => {
         session.events.forEach(ev => {
           if (ev.ty === "bank" || !ev.f || !ev.t) return;
           if (ev.f[2] !== currentPlane) return; // only this floor's segments
-          const isWalk = ev.ty === "walk";
+          if (ev.ty !== "walk") return; // teleports get no static line
           const latlngs = eventLatLngs(ev);
 
           L.polyline(latlngs, {
-            color: isWalk ? WALK_COLOR : TP_COLOR,
+            color: WALK_COLOR,
             weight: 3,
             opacity: 0.9,
-            dashArray: isWalk ? null : "8,6",
             lineJoin: "round",
             lineCap: "round"
           }).addTo(routeLayerGroup);
-
-          if (!isWalk) {
-            L.circleMarker(latlngs[0], {
-              radius: 5, color: "#fff", weight: 1,
-              fillColor: TP_COLOR, fillOpacity: 1
-            }).addTo(routeLayerGroup);
-          }
         });
       });
     }
@@ -1553,22 +1546,6 @@
           const tilesReady = !!urls && urls.every(u => loadedTileUrls.has(u));
           if (elapsed >= TELEPORT_FLASH_MIN_MS && (tilesReady || elapsed >= TELEPORT_FLASH_MAX_MS)) {
             activePlayback.flashing = false;
-            // A teleport is an instant jump, not travel - the dashed
-            // orange line on the map is just a static connector showing
-            // where it goes, not a path the marker should glide along
-            // (that's what the blue walk lines are for). Complete this
-            // whole segment in one authoritative cut straight to its
-            // destination, rather than leaving it to the normal
-            // frame-by-frame interpolation below, which would otherwise
-            // creep the marker across it in a handful of jittery re-centers.
-            const seg = activePlayback.segments[activePlayback.lastAnnouncedSegIndex];
-            const targetFrac = seg.endFrac;
-            activePlayback.elapsedMs = targetFrac * activePlayback.PLAYBACK_MS;
-            activePlayback.seekTo(targetFrac, true);
-            if (targetFrac >= 1) {
-              activePlayback.paused = true;
-              setPlayButtonIcon(true);
-            }
           }
         } else {
           const prospectiveMs = Math.min(
