@@ -1449,25 +1449,19 @@
       return pts;
     }
 
-    // Total tile distance an event covers, computed from its raw game
-    // coordinates (f -> any waypoints -> t), not lat/lng. Used to weight
-    // playback time by actual distance traveled rather than real-world
-    // duration - see the weight formula in loadSessionForPlayback for why.
-    function eventTileDistance(ev) {
-      const xs = [ev.f[0]], ys = [ev.f[1]];
+    // Same point-list expansion as eventLatLngs, but in raw game
+    // coordinates (f -> any waypoints -> t) rather than map lat/lng. Used
+    // to compute real per-leg tile distances for playback timing - see
+    // loadSessionForPlayback.
+    function eventGameCoords(ev) {
+      const pts = [{ x: ev.f[0], y: ev.f[1] }];
       if (ev.ty === "walk" && Array.isArray(ev.w)) {
         for (let i = 0; i + 1 < ev.w.length; i += 2) {
-          xs.push(ev.w[i]);
-          ys.push(ev.w[i + 1]);
+          pts.push({ x: ev.w[i], y: ev.w[i + 1] });
         }
       }
-      xs.push(ev.t[0]);
-      ys.push(ev.t[1]);
-      let total = 0;
-      for (let i = 0; i + 1 < xs.length; i++) {
-        total += Math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]);
-      }
-      return total;
+      pts.push({ x: ev.t[0], y: ev.t[1] });
+      return pts;
     }
 
     // Draws a single session's route as Leaflet polylines - walks as solid
@@ -1638,28 +1632,18 @@
         radius: 6, color: "#fff", weight: 2, fillColor: "#ff3b3b", fillOpacity: 1
       }).addTo(leafletMap);
 
-      const PLAYBACK_MS = 6000; // total on-screen playback time, regardless of real duration
       const FOLLOW_ZOOM = 8;
-      const TP_WEIGHT = 1;         // was 0.15 - too small when several teleports
-                                   // followed one long walk, squeezing all of
-                                   // them into a near-invisible sliver of playback
-      const MIN_WALK_WEIGHT = 0.5; // floor so even a 1-tile walk gets a
-                                   // brief, visible moment rather than
-                                   // vanishing instantly
-      const WALK_WEIGHT_SCALE = 1; // sqrt(tileDistance) * this - tuned so a
-                                   // 36-tile straight walk lands at weight 6,
-                                   // matching the old hard cap's boundary,
-                                   // but taller distances keep growing past
-                                   // it instead of flatlining there. A hard
-                                   // cap made any walk beyond ~36 tiles play
-                                   // at the exact same speed regardless of
-                                   // how much further it actually went -
-                                   // e.g. a 40-tile and a 400-tile straight
-                                   // line would race across the screen
-                                   // equally fast. Square root still tapers
-                                   // off (so one giant walk can't swallow an
-                                   // entire session's playback budget) but
-                                   // never fully stops growing.
+      const MS_PER_TILE = 90;   // constant on-screen walking speed - every
+                                // tile takes the same amount of playback
+                                // time, so a long straight run naturally
+                                // takes proportionally longer to watch than
+                                // a short one, rather than everything being
+                                // squeezed into one fixed-length window.
+      const TP_DURATION_MS = 150; // teleports get one short fixed beat,
+                                // regardless of distance - they're a cut,
+                                // not travel (the separate swirl pause for
+                                // tile loading happens on top of this, in
+                                // globalPlaybackTick).
 
       const events = session.events.filter(ev =>
         ev && Array.isArray(ev.f) && Array.isArray(ev.t) &&
@@ -1669,68 +1653,66 @@
         return;
       }
 
-      // Real-world session time span (used for the elapsed/total readout,
-      // completely separate from PLAYBACK_MS above which is just how long
-      // the on-screen animation takes). Teleports are treated as
-      // instantaneous in real time too, same as they are in-game.
+      // Real-world session time span (used for the elapsed/total readout).
+      // Teleports are treated as instantaneous in real time too, same as
+      // they are in-game.
       const t0 = events[0].s;
       const lastEv = events[events.length - 1];
       const lastEvEnd = lastEv.ty === "walk" ? (lastEv.e != null ? lastEv.e : lastEv.s) : lastEv.s;
       const t1 = Math.max(t0 + 1, lastEvEnd);
 
-      // Each event expands into one sub-segment per leg of its path, split
-      // proportionally to leg length so the marker traces the real route
-      // shape rather than cutting corners or lurching. A walk event's
-      // overall weight (how much of the fixed PLAYBACK_MS window it gets)
-      // is based on actual tile distance traveled, NOT real-world
-      // duration - a long straight walk that happened to take a while in
-      // real life still gets playback time proportional to how far it
-      // actually went, so a 40-tile straight line doesn't fly across the
-      // screen at the same pace as a 1-tile step. Each sub-segment also
-      // carries its own slice of real session time (realFrom/realTo),
-      // distributed the same proportional way, so the elapsed-time readout
-      // advances in step with the animation.
+      // Each event expands into one sub-segment per leg of its path
+      // (through any recorded waypoints), so the marker traces the real
+      // route shape rather than cutting corners. Each leg's own on-screen
+      // duration is now a direct, constant-speed function of its actual
+      // tile distance (walks) or a fixed short beat (teleports) - overall
+      // playback length is just whatever that sums to, not squeezed into a
+      // fixed window, so longer sessions naturally take longer to watch
+      // (that's what the scrubber is for). Each sub-segment also carries
+      // its own slice of real session time (realFrom/realTo), distributed
+      // proportionally by tile distance within the event, so the
+      // elapsed-time readout advances in step with the animation.
       const rawSegments = [];
       events.forEach(ev => {
         const isWalk = ev.ty === "walk";
-        const eventWeight = isWalk
-          ? Math.max(MIN_WALK_WEIGHT, Math.sqrt(eventTileDistance(ev)) * WALK_WEIGHT_SCALE)
-          : TP_WEIGHT;
         const pts = eventLatLngs(ev);
+        const gamePts = eventGameCoords(ev);
         const evRealStart = ev.s;
         const evRealEnd = isWalk ? (ev.e != null ? ev.e : ev.s) : ev.s;
 
-        const legLengths = [];
-        let totalLen = 0;
-        for (let i = 0; i + 1 < pts.length; i++) {
-          const dx = pts[i + 1].lng - pts[i].lng, dy = pts[i + 1].lat - pts[i].lat;
-          const len = Math.max(0.0001, Math.hypot(dx, dy));
-          legLengths.push(len);
-          totalLen += len;
+        const legTileLens = [];
+        let totalTileLen = 0;
+        for (let i = 0; i + 1 < gamePts.length; i++) {
+          const len = Math.max(0.0001, Math.hypot(
+            gamePts[i + 1].x - gamePts[i].x, gamePts[i + 1].y - gamePts[i].y));
+          legTileLens.push(len);
+          totalTileLen += len;
         }
         let cumLen = 0;
         for (let i = 0; i + 1 < pts.length; i++) {
           const lenBefore = cumLen;
-          cumLen += legLengths[i];
+          cumLen += legTileLens[i];
           const lenAfter = cumLen;
+          const durationMs = isWalk ? legTileLens[i] * MS_PER_TILE
+            : TP_DURATION_MS;
           rawSegments.push({
             from: pts[i], to: pts[i + 1], isWalk,
             plane: ev.t[2], // destination plane - lets playback auto-switch floors
-            weight: eventWeight * (legLengths[i] / totalLen),
-            realFrom: evRealStart + (evRealEnd - evRealStart) * (lenBefore / totalLen),
-            realTo: evRealStart + (evRealEnd - evRealStart) * (lenAfter / totalLen)
+            durationMs,
+            realFrom: evRealStart + (evRealEnd - evRealStart) * (lenBefore / totalTileLen),
+            realTo: evRealStart + (evRealEnd - evRealStart) * (lenAfter / totalTileLen)
           });
         }
       });
 
-      const totalWeight = rawSegments.reduce((a, s) => a + s.weight, 0) || 1;
-      let cumWeight = 0;
+      const PLAYBACK_MS = Math.max(1, rawSegments.reduce((a, s) => a + s.durationMs, 0));
+      let cumMs = 0;
       const segments = rawSegments.map(s => {
-        const startFrac = cumWeight / totalWeight;
-        cumWeight += s.weight;
+        const startFrac = cumMs / PLAYBACK_MS;
+        cumMs += s.durationMs;
         return {
           from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane,
-          startFrac, endFrac: cumWeight / totalWeight,
+          startFrac, endFrac: cumMs / PLAYBACK_MS,
           realFrom: s.realFrom, realTo: s.realTo,
           tileUrls: null // populated below for teleport segments only
         };
