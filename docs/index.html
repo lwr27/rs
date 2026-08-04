@@ -207,6 +207,25 @@
   .cal-legend .cal-day { width: 10px; height: 10px; }
   .session-empty { color: var(--text-faint); font-size: 0.72rem; text-align: center; padding: 12px; }
 
+  .combined-log {
+    max-width: 720px; margin: 20px auto; display: flex; flex-direction: column; gap: 6px;
+  }
+  .combined-item {
+    background: var(--cell); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .combined-item .crow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .combined-item .cplayer {
+    font-weight: 700; font-size: 0.78rem; padding: 1px 8px; border-radius: 10px;
+    flex-shrink: 0; color: #0c0f14;
+  }
+  .combined-item .ctime { color: var(--text-faint); font-size: 0.68rem; flex: 1 1 auto; text-align: left; margin-left: 8px; }
+  .combined-item .ctotal { color: var(--accent); font-weight: bold; font-size: 0.85rem; flex-shrink: 0; }
+  .combined-item .ctotal-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
+  .combined-item .cbreak { color: var(--text-dim); font-size: 0.68rem; margin-top: 5px; }
+  .combined-item .cmaxed { color: var(--text-faint); opacity: 0.8; }
+  .combined-empty { color: var(--text-faint); font-size: 0.8rem; text-align: center; padding: 24px; }
+
   .tooltip {
     display: none; position: absolute; z-index: 20;
     bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
@@ -276,12 +295,17 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="skills">Skills</button>
     <button class="tab-btn" data-tab="map">Map</button>
+    <button class="tab-btn" data-tab="combined">Combined Log</button>
     <button class="tab-btn" data-tab="luck">5JV: Corrupted Gauntlet <span class="tab-tick">✓</span></button>
     <button class="tab-btn" data-tab="rangerluck">6LR: Ranger Boots</button>
   </div>
 
   <div class="tab-panel active" id="panel-skills">
     <div class="board" id="board"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-combined">
+    <div id="combinedLog"></div>
   </div>
 
   <div class="tab-panel" id="panel-luck">
@@ -696,6 +720,88 @@
       col.appendChild(renderCalendar(player, history, globalStartDate));
 
       return col;
+    }
+
+    // Fixed per-player accent colours for the combined log's player tag -
+    // keyed by username so each player reads consistently at a glance
+    // regardless of column order.
+    const PLAYER_COLORS = {
+      "5JV": "#8ecbff",
+      "6LR": "#7bd88f",
+      "Iron Shiifty": "#ffd24f"
+    };
+
+    // Merges all players' session-log entries (same 7-day window/filter as
+    // the per-player log) into one chronological feed, each entry tagged
+    // with its player. Mirrors renderColumn's session-item formatting so
+    // the two views stay visually consistent.
+    function renderCombinedLog(players, histories) {
+      const container = document.getElementById("combinedLog");
+      container.innerHTML = "";
+
+      const wrap = document.createElement("div");
+      wrap.className = "combined-log";
+
+      const cutoff = Date.now() - WINDOW_MS;
+      const merged = [];
+      players.forEach((player, i) => {
+        const history = histories[i];
+        const sessions = (history && history.history ? history.history : [])
+          .filter(e => new Date(e.timestamp).getTime() >= cutoff &&
+            (e.totalGain > 0 || (e.activityGains && Object.keys(e.activityGains).length)));
+        sessions.forEach(s => merged.push({ session: s, player }));
+      });
+
+      merged.sort((a, b) => new Date(b.session.timestamp) - new Date(a.session.timestamp));
+
+      if (merged.length) {
+        merged.slice(0, 150).forEach(({ session: s, player }) => {
+          const item = document.createElement("div");
+          item.className = "combined-item";
+
+          const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
+          const gains = Object.entries(s.gains || {})
+            .filter(([sk, xp]) => sk !== "Overall" && xp > 0)
+            .sort((a, b) => b[1] - a[1]);
+
+          const breakdown = gains
+            .filter(([sk]) => !isMaxed(sk))
+            .map(([sk, xp]) => sk + " +" + fmt(xp))
+            .join(", ");
+          const activityBreakdown = Object.entries(s.activityGains || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, score]) => name + " +" + fmt(score))
+            .join(", ");
+          const maxedBreakdown = gains
+            .filter(([sk]) => isMaxed(sk))
+            .map(([sk, xp]) => sk + " +" + fmt(xp))
+            .join(", ");
+          const nonMaxedTotal = gains
+            .filter(([sk]) => !isMaxed(sk))
+            .reduce((sum, [, xp]) => sum + xp, 0);
+          const maxedTotal = gains
+            .filter(([sk]) => isMaxed(sk))
+            .reduce((sum, [, xp]) => sum + xp, 0);
+
+          const fullBreakdown = [breakdown, activityBreakdown].filter(Boolean).join(" — ") +
+            (maxedBreakdown ? ' <span class="cmaxed">(99s: ' + maxedBreakdown + ')</span>' : '');
+
+          const tagColor = PLAYER_COLORS[player.username] || "#8ecbff";
+          item.innerHTML =
+            '<div class="crow">' +
+            '<span class="cplayer" style="background:' + tagColor + '">' + player.username + '</span>' +
+            '<span class="ctime">' + timeAgo(s.timestamp) + '</span>' +
+            '<span class="ctotal">+' + fmt(nonMaxedTotal) + ' xp' +
+            (maxedTotal ? ' <span class="ctotal-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
+            '</span></div>' +
+            (fullBreakdown.trim() ? '<div class="cbreak">' + fullBreakdown + '</div>' : '');
+          wrap.appendChild(item);
+        });
+      } else {
+        wrap.innerHTML = '<div class="combined-empty">No sessions recorded yet</div>';
+      }
+
+      container.appendChild(wrap);
     }
 
     // Formats any Date/timestamp as its calendar day (YYYY-MM-DD) in UK local
@@ -2006,6 +2112,7 @@
       });
 
       initTabs();
+      renderCombinedLog(data.players, histories);
       renderGauntletLuck(data.players);
       renderRangerLuck(data.players);
       renderPatchNotes();
