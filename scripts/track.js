@@ -13,6 +13,12 @@ const path = require("path");
 // lists) - mapped here once. Anything NOT in this list just passes through
 // under Jagex's own name as-is; a future rename would show up looking a
 // little different rather than corrupting any other entry's data.
+// Marks a snapshot file as having been written under the current
+// name-matching fetchStats() - see loadPreviousSnapshot/appendSnapshot.
+// Bumping this string (rather than the value) would force every player to
+// re-baseline once, if that's ever needed again in the future.
+const ACTIVITIES_NAME_MATCHING_KEY = "activitiesNameMatched_v1";
+
 const NAME_OVERRIDES = {
   "Runecraft": "Runecrafting",
   "Calvar'ion": "Cal'varion"
@@ -91,13 +97,20 @@ async function fetchStats(username, mode) {
   return { stats, activities };
 }
 
+// Returns { entry: <last history entry or null>, migrated: <bool> }.
+// `migrated` tracks whether this snapshot file has ever been written by
+// the name-matching version of fetchStats (see ACTIVITIES_NAME_MATCHING_KEY
+// below) - used to skip diffing activities against a single potentially
+// mislabeled baseline right after switching away from column-position
+// parsing, without needing any manual one-off migration step.
 function loadPreviousSnapshot(username) {
   const file = snapshotPath(username);
-  if (!fs.existsSync(file)) return null;
+  if (!fs.existsSync(file)) return { entry: null, migrated: false };
   const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-  return raw.history && raw.history.length
+  const entry = raw.history && raw.history.length
     ? raw.history[raw.history.length - 1]
     : null;
+  return { entry, migrated: raw[ACTIVITIES_NAME_MATCHING_KEY] === true };
 }
 
 // Diffs by whichever skill names are actually present in this response
@@ -186,6 +199,7 @@ function appendSnapshot(username, entry) {
   if (fs.existsSync(file)) {
     raw = JSON.parse(fs.readFileSync(file, "utf8"));
   }
+  raw[ACTIVITIES_NAME_MATCHING_KEY] = true;
   raw.history.push(entry);
 
   // The session log and calendar only ever read timestamp/gains/totalGain/
@@ -277,9 +291,19 @@ async function main() {
   for (const { username, mode } of players) {
     try {
       const { stats: currStats, activities: currActivities } = await fetchStats(username, mode);
-      const prevEntry = loadPreviousSnapshot(username);
+      const { entry: prevEntry, migrated } = loadPreviousSnapshot(username);
       const { gains, totalGain } = diffXp(prevEntry?.stats, currStats);
-      const activityGains = diffActivities(prevEntry?.activities, currActivities);
+      // Skills were never affected by the old column-shift bug (only
+      // ACTIVITIES was), so stats/XP always diff normally. Activities only
+      // diff against the previous snapshot once this file has been through
+      // at least one name-matched write - otherwise `prevEntry.activities`
+      // may hold data recorded under the old, possibly mislabeled column
+      // positions, and comparing against it would produce a one-time fake
+      // "gain" (or fake loss) that never actually happened. Passing
+      // `undefined` here makes diffActivities fall back to treating the
+      // current score as its own baseline - i.e. a quiet re-baseline with
+      // zero reported gain, rather than a bogus spike.
+      const activityGains = diffActivities(migrated ? prevEntry?.activities : undefined, currActivities);
 
       const levelUps = diffLevelUps(prevEntry?.stats, currStats);
       levelUps.forEach(lu => {
