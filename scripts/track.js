@@ -1,51 +1,34 @@
 const fs = require("fs");
 const path = require("path");
 
-const SKILLS = [
-  "Overall", "Attack", "Defence", "Strength", "Hitpoints", "Ranged",
-  "Prayer", "Magic", "Cooking", "Woodcutting", "Fletching", "Fishing",
-  "Firemaking", "Crafting", "Smithing", "Mining", "Herblore", "Agility",
-  "Thieving", "Slayer", "Farming", "Runecrafting", "Hunter", "Construction",
-  "Sailing"
-];
+// The JSON hiscores endpoint (index_lite.json, vs the old .ws CSV) tags
+// every skill/activity with its own name directly in the response, so we
+// match by that name instead of by array position - this is what actually
+// fixes the recurring "new boss shifts every column after it" bug for
+// good. New bosses, removed bosses, and reordering can never silently
+// misalign anything again, since nothing here depends on position.
+//
+// A couple of the API's own names differ cosmetically from the display
+// names used elsewhere on the site (index.html's skill grid, category
+// lists) - mapped here once. Anything NOT in this list just passes through
+// under Jagex's own name as-is; a future rename would show up looking a
+// little different rather than corrupting any other entry's data.
+const NAME_OVERRIDES = {
+  "Runecraft": "Runecrafting",
+  "Calvar'ion": "Cal'varion"
+};
 
-// Exact order per the official hiscores index_lite.ws response (OSRS).
-// Each of these lines is "rank,score" (2 values), unlike skills which are "rank,level,xp".
-const ACTIVITIES = [
+// Activities intentionally excluded from the "notable" set surfaced on the
+// dashboard (LMS rank, grid points, etc. aren't boss/clue killcounts).
+// Matched by name, not position - if Jagex renames one of these it just
+// starts showing up as a notable entry rather than breaking anything.
+const EXCLUDED_FROM_NOTABLE = new Set([
   "Grid Points", "League Points", "Deadman Points",
   "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
   "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
-  "Clue Scrolls (all)", "Clue Scrolls (beginner)", "Clue Scrolls (easy)",
-  "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
-  "Clue Scrolls (master)",
   "LMS - Rank", "PvP Arena - Rank", "Soul Wars Zeal", "Rifts closed",
-  "Colosseum Glory", "Collections Logged",
-  "Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor", "Artio",
-  "Barrows Chests", "Brutus", "Bryophyta", "Callisto", "Cal'varion",
-  "Cerberus", "Chambers of Xeric", "Chambers of Xeric: Challenge Mode",
-  "Chaos Elemental", "Chaos Fanatic", "Commander Zilyana", "Corporeal Beast",
-  "Crazy Archaeologist", "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
-  "Deranged Archaeologist", "Doom of Mokhaiotl", "Duke Sucellus",
-  "General Graardor", "Giant Mole", "Grotesque Guardians", "Hespori",
-  "Kalphite Queen", "King Black Dragon", "Kraken", "Kree'Arra", "K'ril Tsutsaroth",
-  "Lunar Chests", "Mimic", "Nex", "Nightmare", "Phosani's Nightmare", "Obor",
-  "Phantom Muspah", "Gemstone Crab", "Sarachnis", "Scorpia", "Scurrius", "Shellbane Gryphon",
-  "Skotizo", "Sol Heredit", "Spindel", "Tempoross", "The Gauntlet",
-  "The Corrupted Gauntlet", "The Hueycoatl", "The Leviathan", "The Royal Titans",
-  "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
-  "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
-  "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
-  "Wintertodt", "Yama", "Zalcano", "Zulrah"
-];
-
-// Curated subset actually surfaced in the dashboard (clues + boss/raid killcounts).
-const NOTABLE_ACTIVITIES = ACTIVITIES.filter(a =>
-  a.startsWith("Clue Scrolls") ||
-  !["Grid Points", "League Points", "Deadman Points", "Bounty Hunter - Hunter",
-    "Bounty Hunter - Rogue", "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
-    "LMS - Rank", "PvP Arena - Rank", "Soul Wars Zeal", "Rifts closed",
-    "Colosseum Glory", "Collections Logged"].includes(a)
-);
+  "Colosseum Glory", "Collections Logged"
+]);
 
 const MODE_PATH = {
   normal: "hiscore_oldschool",
@@ -73,30 +56,36 @@ function snapshotPath(username) {
   return path.join(SNAPSHOT_DIR, `${safeName}.json`);
 }
 
+// Fetches and parses a player's hiscores via the JSON endpoint. Every
+// skill/activity is matched by its own name in the response - see
+// NAME_OVERRIDES above for why this is immune to Jagex inserting,
+// removing, or reordering entries (unlike the old CSV + fixed-array
+// approach, where a single new boss silently shifted every entry after it).
 async function fetchStats(username, mode) {
   const modePath = MODE_PATH[mode] || MODE_PATH.normal;
-  const url = `https://secure.runescape.com/m=${modePath}/index_lite.ws?player=${encodeURIComponent(username)}`;
+  const url = `https://secure.runescape.com/m=${modePath}/index_lite.json?player=${encodeURIComponent(username)}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "osrs-xp-tracker (personal project, github.com)" }
   });
   if (!res.ok) {
     throw new Error(`Hiscores request failed for ${username}: ${res.status}`);
   }
-  const text = (await res.text()).trim();
-  const lines = text.split("\n");
+  const data = await res.json();
 
   const stats = {};
-  SKILLS.forEach((skill, i) => {
-    const parts = (lines[i] || "-1,-1,-1").split(",").map(Number);
-    const [rank, level, xp] = parts;
-    stats[skill] = { rank, level: level < 0 ? 0 : level, xp: xp < 0 ? 0 : xp };
+  (data.skills || []).forEach(s => {
+    const name = NAME_OVERRIDES[s.name] || s.name;
+    stats[name] = {
+      rank: s.rank,
+      level: s.level < 0 ? 0 : s.level,
+      xp: s.xp < 0 ? 0 : s.xp
+    };
   });
 
   const activities = {};
-  ACTIVITIES.forEach((name, i) => {
-    const line = lines[SKILLS.length + i] || "-1,-1";
-    const [rank, score] = line.split(",").map(Number);
-    activities[name] = { rank, score: score < 0 ? 0 : score };
+  (data.activities || []).forEach(a => {
+    const name = NAME_OVERRIDES[a.name] || a.name;
+    activities[name] = { rank: a.rank, score: a.score < 0 ? 0 : a.score };
   });
 
   return { stats, activities };
@@ -111,10 +100,19 @@ function loadPreviousSnapshot(username) {
     : null;
 }
 
+// Diffs by whichever skill names are actually present in this response
+// (unioned with whatever the previous snapshot had, in the unlikely case
+// one disappeared) rather than a fixed list - so a brand new skill just
+// works the moment Jagex adds it, with no code change needed here.
 function diffXp(prevStats, currStats) {
   const gains = {};
   let totalGain = 0;
-  for (const skill of SKILLS) {
+  const skillNames = new Set([
+    ...Object.keys(currStats),
+    ...Object.keys(prevStats || {})
+  ]);
+  for (const skill of skillNames) {
+    if (!currStats[skill]) continue; // dropped from hiscores entirely - nothing to diff
     const prevXp = prevStats?.[skill]?.xp ?? currStats[skill].xp;
     const delta = currStats[skill].xp - prevXp;
     if (delta > 0) {
@@ -127,7 +125,7 @@ function diffXp(prevStats, currStats) {
 
 function diffActivities(prevActivities, currActivities) {
   const gains = {};
-  for (const name of ACTIVITIES) {
+  for (const name of Object.keys(currActivities)) {
     const prevScore = prevActivities?.[name]?.score ?? currActivities[name].score;
     const delta = currActivities[name].score - prevScore;
     if (delta > 0) gains[name] = delta;
@@ -147,7 +145,7 @@ function londonDateKey(d) {
 function diffLevelUps(prevStats, currStats) {
   if (!prevStats) return []; // first ever poll for this account - nothing to compare against
   const levelUps = [];
-  for (const skill of SKILLS) {
+  for (const skill of Object.keys(currStats)) {
     if (skill === "Overall") continue;
     const prevLevel = prevStats[skill]?.level;
     const currLevel = currStats[skill].level;
@@ -298,10 +296,13 @@ async function main() {
       };
       appendSnapshot(username, entry);
 
-      // Only include non-zero notable activities in latest.json to keep payload small.
+      // Only include non-zero notable activities in latest.json to keep
+      // payload small - "notable" is now whatever the live response
+      // returns, minus the excluded admin-y set, rather than a fixed list.
       const notable = {};
-      NOTABLE_ACTIVITIES.forEach(name => {
-        if (currActivities[name].score > 0) notable[name] = currActivities[name];
+      Object.keys(currActivities).forEach(name => {
+        const isNotable = name.startsWith("Clue Scrolls") || !EXCLUDED_FROM_NOTABLE.has(name);
+        if (isNotable && currActivities[name].score > 0) notable[name] = currActivities[name];
       });
 
       latest.players.push({
