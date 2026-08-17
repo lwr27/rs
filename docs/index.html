@@ -168,6 +168,14 @@
   }
   .session-item .srow { display: flex; justify-content: space-between; align-items: center; }
   .session-item .stime { color: var(--text-faint); font-size: 0.65rem; }
+  .records-wrap { display: flex; gap: 8px; }
+  .record-item {
+    flex: 1; background: var(--cell); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 8px 10px; text-align: center;
+  }
+  .record-label { color: var(--text-faint); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.4px; }
+  .record-val { color: var(--accent); font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; margin: 3px 0 1px; }
+  .record-date { color: var(--text-dim); font-size: 0.66rem; }
   .session-item .stotal { color: var(--accent); font-weight: bold; }
   .session-item .stotal-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
   .session-item .sbreak { color: var(--text-dim); font-size: 0.65rem; margin-top: 3px; }
@@ -689,6 +697,12 @@
       }
       col.appendChild(log);
 
+      const recordsLabel = document.createElement("div");
+      recordsLabel.className = "section-label";
+      recordsLabel.textContent = "Records";
+      col.appendChild(recordsLabel);
+      col.appendChild(renderRecords(player, history));
+
       const calLabel = document.createElement("div");
       calLabel.className = "section-label";
       calLabel.textContent = "Days played";
@@ -704,6 +718,65 @@
       timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit"
     });
     function londonDateKey(d) { return LONDON_FMT.format(d); }
+
+    // Finds the single best XP day and best boss-kill day across the
+    // player's whole history, using the same UK-calendar-day bucketing the
+    // calendar heatmap uses. Best XP day excludes XP in already-maxed (99)
+    // skills, matching how the calendar/session log count XP everywhere
+    // else. Best boss day is the raw total of all activity-score gains
+    // (boss KC, clues, etc.) that day.
+    function renderRecords(player, history) {
+      const entries = (history && history.history) ? history.history : [];
+      const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
+
+      const xpByDay = {};   // non-maxed skill XP per UK day
+      const bossByDay = {}; // total activity-score gain per UK day
+      entries.forEach(e => {
+        const day = londonDateKey(new Date(e.timestamp));
+        Object.entries(e.gains || {}).forEach(([sk, xp]) => {
+          if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
+          xpByDay[day] = (xpByDay[day] || 0) + xp;
+        });
+        Object.entries(e.activityGains || {}).forEach(([, score]) => {
+          if (!(score > 0)) return;
+          bossByDay[day] = (bossByDay[day] || 0) + score;
+        });
+      });
+
+      const bestOf = (map) => {
+        let bestDay = null, bestVal = 0;
+        Object.entries(map).forEach(([day, val]) => {
+          if (val > bestVal) { bestVal = val; bestDay = day; }
+        });
+        return bestDay ? { day: bestDay, val: bestVal } : null;
+      };
+
+      const bestXp = bestOf(xpByDay);
+      const bestBoss = bestOf(bossByDay);
+
+      const wrap = document.createElement("div");
+      wrap.className = "records-wrap";
+
+      const fmtDay = key => new Date(key + "T00:00:00Z").toLocaleDateString("en-US", {
+        month: "short", day: "numeric", year: "numeric", timeZone: "UTC"
+      });
+
+      const row = (label, rec, unit) => {
+        const val = rec ? fmt(rec.val) + " " + unit : "--";
+        const sub = rec ? fmtDay(rec.day) : "no data yet";
+        return '<div class="record-item">' +
+          '<div class="record-label">' + label + '</div>' +
+          '<div class="record-val">' + val + '</div>' +
+          '<div class="record-date">' + sub + '</div>' +
+          '</div>';
+      };
+
+      wrap.innerHTML =
+        row("Best XP day", bestXp, "xp") +
+        row("Best boss day", bestBoss, bestBoss && bestBoss.val === 1 ? "kill" : "kills");
+
+      return wrap;
+    }
 
     function renderCalendar(player, history, globalStartDate) {
       const wrap = document.createElement("div");
