@@ -191,22 +191,27 @@
   .cal-day {
     width: 11px; height: 11px; border-radius: 2px; background: var(--cell);
     border: 1px solid var(--panel-border);
+    position: relative;
   }
   .cal-day.cal-lvl-1 { background: #1c3a5e; border-color: #1c3a5e; }
   .cal-day.cal-lvl-2 { background: #2d5a8c; border-color: #2d5a8c; }
   .cal-day.cal-lvl-3 { background: #3d7ab8; border-color: #3d7ab8; }
   .cal-day.cal-lvl-4 { background: #4f8ef0; border-color: #4f8ef0; }
-  .cal-day { cursor: pointer; }
   .cal-day:hover { outline: 1px solid var(--text-faint); outline-offset: 1px; }
-  .cal-day.cal-selected { outline: 2px solid #ff9f43; outline-offset: 1px; }
   .cal-week.cal-month-gap { margin-left: 10px; }
-  .cal-selected-info {
-    margin-top: 8px; font-size: 0.68rem; color: var(--text-dim); min-height: 1em;
+  .cal-day-info {
+    display: none; position: absolute; z-index: 20;
+    bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
+    background: #05070a; border: 1px solid var(--panel-border); border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    padding: 6px 8px; font-size: 0.68rem; color: var(--text-dim);
+    white-space: nowrap; max-width: 260px;
   }
-  .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
-  .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
-  .cal-selected-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
-  .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); }
+  .cal-day:hover .cal-day-info { display: block; }
+  .cal-day-info .csi-date { color: var(--text); font-weight: 600; }
+  .cal-day-info .csi-xp { color: var(--accent); font-weight: 700; }
+  .cal-day-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
+  .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); white-space: normal; }
   .cal-day-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
   .cal-legend {
     display: flex; align-items: center; gap: 4px; margin-top: 6px;
@@ -859,15 +864,10 @@
       const grid = document.createElement("div");
       grid.className = "cal-grid";
 
-      const selectedInfo = document.createElement("div");
-      selectedInfo.className = "cal-selected-info";
-      selectedInfo.textContent = "Click a day to see details";
-
-      let selectedCell = null;
-      function selectCell(cell, key, xp) {
-        if (selectedCell) selectedCell.classList.remove("cal-selected");
-        cell.classList.add("cal-selected");
-        selectedCell = cell;
+      // Same content/format as before (date, xp in blue, kills in blue,
+      // skill/boss breakdown below) - now built per-cell as hover tooltip
+      // content instead of a shared panel below the grid.
+      function buildDayInfo(key, xp) {
         const dateLabel = new Date(key + "T00:00:00Z").toLocaleDateString("en-US", {
           weekday: "long", month: "short", day: "numeric", timeZone: "UTC"
         });
@@ -893,7 +893,7 @@
         const breakdown = [mainSkills, activities].filter(Boolean).join(" — ") +
           (maxedSkills ? ' <span class="smaxed">(99s: ' + maxedSkills + ')</span>' : "");
 
-        selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
+        return '<span class="csi-date">' + dateLabel + '</span> — ' +
           (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp' +
             (maxedTotal ? ' <span class="csi-xp-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
             '</span>' : 'no gains') +
@@ -927,8 +927,10 @@
           } else {
             const xp = nonMaxedByDay[key] || 0;
             cell.className = "cal-day cal-lvl-" + levelFor(xp);
-            cell.title = key + (xp ? ": " + fmt(xp) + " xp" : ": no gains");
-            cell.addEventListener("click", () => selectCell(cell, key, xp));
+            const info = document.createElement("div");
+            info.className = "cal-day-info";
+            info.innerHTML = buildDayInfo(key, xp);
+            cell.appendChild(info);
           }
           week.appendChild(cell);
           cur.setUTCDate(cur.getUTCDate() + 1);
@@ -936,7 +938,6 @@
         grid.appendChild(week);
       }
       wrap.appendChild(grid);
-      wrap.appendChild(selectedInfo);
 
       const legend = document.createElement("div");
       legend.className = "cal-legend";
