@@ -725,12 +725,20 @@
     // skills; best boss day is the raw total of all activity-score gains
     // (boss KC, clues, etc.) that day.
     //
-    // The player's earliest data day is excluded from BOTH records: the
-    // first-ever poll has no previous snapshot to diff against, so that
-    // day's gains are really the account's entire pre-existing lifetime
-    // totals recorded at once, not a single day's play. (This also
-    // naturally covers the one-off name-matching recalibration artifact if
-    // it happened to be the earliest entry.)
+    // Two known artifact days are excluded, for different reasons:
+    // - The player's earliest data day (both records): the first-ever poll
+    //   has no previous snapshot to diff against, so that day's gains are
+    //   really the account's entire pre-existing lifetime totals recorded
+    //   at once, not a single day's play.
+    // - 2026-08-07 (boss record only): the one-off name-matching
+    //   recalibration day, when activity tracking switched from
+    //   column-position to name-based matching. That run's activityGains
+    //   are corrected boss names showing up as a huge "gain" against the
+    //   old mislabeled baseline, not real kills. This is a SEPARATE day
+    //   from each player's earliest day, so it needs its own exclusion -
+    //   the earliest-day rule alone does not cover it.
+    const BOSS_RECORD_EXCLUDE_DAY = "2026-08-07";
+
     function renderRecords(player, history) {
       const entries = (history && history.history) ? history.history : [];
       const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
@@ -748,11 +756,13 @@
           if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
           xpByDay[day] = (xpByDay[day] || 0) + xp;
         });
+        if (day === BOSS_RECORD_EXCLUDE_DAY) return; // recalibration artifact - boss record only
         Object.entries(e.activityGains || {}).forEach(([, score]) => {
           if (!(score > 0)) return;
           bossByDay[day] = (bossByDay[day] || 0) + score;
         });
       });
+
 
       const bestOf = (map) => {
         let bestDay = null, bestVal = 0;
