@@ -191,16 +191,23 @@
   .cal-day {
     width: 11px; height: 11px; border-radius: 2px; background: var(--cell);
     border: 1px solid var(--panel-border);
-    position: relative; cursor: default;
   }
   .cal-day.cal-lvl-1 { background: #1c3a5e; border-color: #1c3a5e; }
   .cal-day.cal-lvl-2 { background: #2d5a8c; border-color: #2d5a8c; }
   .cal-day.cal-lvl-3 { background: #3d7ab8; border-color: #3d7ab8; }
   .cal-day.cal-lvl-4 { background: #4f8ef0; border-color: #4f8ef0; }
+  .cal-day { cursor: pointer; }
   .cal-day:hover { outline: 1px solid var(--text-faint); outline-offset: 1px; }
+  .cal-day.cal-selected { outline: 2px solid #ff9f43; outline-offset: 1px; }
   .cal-week.cal-month-gap { margin-left: 10px; }
-  .cal-tooltip-breakdown { margin-top: 4px; color: var(--text-dim); border-top: 1px solid var(--panel-border); padding-top: 4px; }
-  .cal-tooltip-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
+  .cal-selected-info {
+    margin-top: 8px; font-size: 0.68rem; color: var(--text-dim); min-height: 1em;
+  }
+  .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
+  .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
+  .cal-selected-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
+  .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); }
+  .cal-day-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
   .cal-legend {
     display: flex; align-items: center; gap: 4px; margin-top: 6px;
     font-size: 0.62rem; color: var(--text-faint);
@@ -218,8 +225,7 @@
   .tooltip .tr { display: flex; justify-content: space-between; gap: 14px; }
   .tooltip .tr + .tr { margin-top: 2px; }
   .tooltip .th { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; padding-bottom: 2px; }
-  .tile:hover .tooltip, .cal-day:hover .tooltip { display: block; }
-  .cal-day .tooltip { white-space: normal; max-width: 260px; }
+  .tile:hover .tooltip { display: block; }
 
   .tabs {
     display: flex; gap: 6px; max-width: 1900px; margin: 0 auto 12px;
@@ -853,10 +859,15 @@
       const grid = document.createElement("div");
       grid.className = "cal-grid";
 
-      // Builds the same date/xp/boss/skill-breakdown HTML previously shown
-      // in the panel below the grid, now used as hover tooltip content per
-      // day instead.
-      function buildDayTooltip(key, xp) {
+      const selectedInfo = document.createElement("div");
+      selectedInfo.className = "cal-selected-info";
+      selectedInfo.textContent = "Click a day to see details";
+
+      let selectedCell = null;
+      function selectCell(cell, key, xp) {
+        if (selectedCell) selectedCell.classList.remove("cal-selected");
+        cell.classList.add("cal-selected");
+        selectedCell = cell;
         const dateLabel = new Date(key + "T00:00:00Z").toLocaleDateString("en-US", {
           weekday: "long", month: "short", day: "numeric", timeZone: "UTC"
         });
@@ -882,12 +893,12 @@
         const breakdown = [mainSkills, activities].filter(Boolean).join(" — ") +
           (maxedSkills ? ' <span class="smaxed">(99s: ' + maxedSkills + ')</span>' : "");
 
-        return '<div class="th">' + dateLabel + '</div>' +
-          '<div class="tr"><span>XP</span><span>' + (xp ? fmt(xp) : "0") +
-          (maxedTotal ? ' (+' + fmt(maxedTotal) + ')' : '') + '</span></div>' +
-          (bossTotal ? '<div class="tr"><span>' + (bossTotal === 1 ? "Kill" : "Kills") +
-            '</span><span>' + fmt(bossTotal) + '</span></div>' : '') +
-          (breakdown.trim() ? '<div class="cal-tooltip-breakdown">' + breakdown + '</div>' : "");
+        selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
+          (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp' +
+            (maxedTotal ? ' <span class="csi-xp-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
+            '</span>' : 'no gains') +
+          (bossTotal ? ', <span class="csi-xp">' + fmt(bossTotal) + (bossTotal === 1 ? ' kill' : ' kills') + '</span>' : '') +
+          (breakdown.trim() ? '<div class="cal-day-breakdown">' + breakdown + '</div>' : "");
       }
 
       let cur = new Date(start);
@@ -916,7 +927,8 @@
           } else {
             const xp = nonMaxedByDay[key] || 0;
             cell.className = "cal-day cal-lvl-" + levelFor(xp);
-            cell.innerHTML = '<div class="tooltip">' + buildDayTooltip(key, xp) + '</div>';
+            cell.title = key + (xp ? ": " + fmt(xp) + " xp" : ": no gains");
+            cell.addEventListener("click", () => selectCell(cell, key, xp));
           }
           week.appendChild(cell);
           cur.setUTCDate(cur.getUTCDate() + 1);
@@ -924,6 +936,7 @@
         grid.appendChild(week);
       }
       wrap.appendChild(grid);
+      wrap.appendChild(selectedInfo);
 
       const legend = document.createElement("div");
       legend.className = "cal-legend";
