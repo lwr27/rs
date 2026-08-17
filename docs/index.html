@@ -725,13 +725,11 @@
     // skills; best boss day is the raw total of all activity-score gains
     // (boss KC, clues, etc.) that day.
     //
-    // These two specific dates are excluded from the boss-kill record only
-    // (known bad data, not real single-day kills): 2026-07-29 was the
-    // first-ever activity poll (no prior snapshot to diff against, so it
-    // recorded lifetime KC as one "gain"); 2026-08-07 was the name-matching
-    // recalibration day (corrected boss names vs. the old mislabeled
-    // baseline, again not real kills).
-    const BOSS_RECORD_EXCLUDED_DAYS = new Set(["2026-07-29", "2026-08-07"]);
+    // Boss-kill record only counts days from this date onward - everything
+    // before it is known-bad data from tracking changes/fixes made while
+    // building this feature (first-poll lifetime totals, a name-matching
+    // recalibration spike), not real single-day kill counts.
+    const BOSS_RECORD_CUTOFF_DAY = "2026-08-08";
 
     function renderRecords(player, history) {
       const entries = (history && history.history) ? history.history : [];
@@ -745,7 +743,7 @@
           if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
           xpByDay[day] = (xpByDay[day] || 0) + xp;
         });
-        if (!BOSS_RECORD_EXCLUDED_DAYS.has(day)) {
+        if (day >= BOSS_RECORD_CUTOFF_DAY) {
           Object.entries(e.activityGains || {}).forEach(([, score]) => {
             if (!(score > 0)) return;
             bossByDay[day] = (bossByDay[day] || 0) + score;
