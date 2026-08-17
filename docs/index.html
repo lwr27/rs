@@ -205,6 +205,7 @@
   }
   .cal-selected-info .csi-date { color: var(--text); font-weight: 600; }
   .cal-selected-info .csi-xp { color: var(--accent); font-weight: 700; }
+  .cal-selected-info .csi-boss { color: #ff9f43; font-weight: 700; }
   .cal-selected-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
   .cal-day-breakdown { margin-top: 3px; color: var(--text-dim); }
   .cal-day-breakdown .smaxed { color: var(--text-faint); opacity: 0.8; }
@@ -888,6 +889,7 @@
           .map(([sk, v]) => sk + " +" + fmt(v)).join(", ");
         const maxedTotal = skillEntries.filter(([sk]) => isMaxed(sk))
           .reduce((sum, [, v]) => sum + v, 0);
+        const bossTotal = activityEntries.reduce((sum, [, v]) => sum + v, 0);
 
         const breakdown = [mainSkills, activities].filter(Boolean).join(" — ") +
           (maxedSkills ? ' <span class="smaxed">(99s: ' + maxedSkills + ')</span>' : "");
@@ -895,7 +897,8 @@
         selectedInfo.innerHTML = '<span class="csi-date">' + dateLabel + '</span> — ' +
           (xp ? '<span class="csi-xp">' + fmt(xp) + ' xp' +
             (maxedTotal ? ' <span class="csi-xp-maxed">(+' + fmt(maxedTotal) + ')</span>' : '') +
-            '</span>' : 'no gains') +
+            '</span>' : 'no xp gains') +
+          (bossTotal ? ', <span class="csi-boss">' + fmt(bossTotal) + (bossTotal === 1 ? ' kill' : ' kills') + '</span>' : '') +
           (breakdown.trim() ? '<div class="cal-day-breakdown">' + breakdown + '</div>' : "");
       }
 
