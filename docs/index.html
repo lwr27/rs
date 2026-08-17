@@ -725,44 +725,33 @@
     // skills; best boss day is the raw total of all activity-score gains
     // (boss KC, clues, etc.) that day.
     //
-    // Two known artifact days are excluded, for different reasons:
-    // - The player's earliest data day (both records): the first-ever poll
-    //   has no previous snapshot to diff against, so that day's gains are
-    //   really the account's entire pre-existing lifetime totals recorded
-    //   at once, not a single day's play.
-    // - 2026-08-07 (boss record only): the one-off name-matching
-    //   recalibration day, when activity tracking switched from
-    //   column-position to name-based matching. That run's activityGains
-    //   are corrected boss names showing up as a huge "gain" against the
-    //   old mislabeled baseline, not real kills. This is a SEPARATE day
-    //   from each player's earliest day, so it needs its own exclusion -
-    //   the earliest-day rule alone does not cover it.
-    const BOSS_RECORD_EXCLUDE_DAY = "2026-08-07";
+    // These two specific dates are excluded from the boss-kill record only
+    // (known bad data, not real single-day kills): 2026-07-29 was the
+    // first-ever activity poll (no prior snapshot to diff against, so it
+    // recorded lifetime KC as one "gain"); 2026-08-07 was the name-matching
+    // recalibration day (corrected boss names vs. the old mislabeled
+    // baseline, again not real kills).
+    const BOSS_RECORD_EXCLUDED_DAYS = new Set(["2026-07-29", "2026-08-07"]);
 
     function renderRecords(player, history) {
       const entries = (history && history.history) ? history.history : [];
       const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
 
-      const allDays = new Set();
-      entries.forEach(e => allDays.add(londonDateKey(new Date(e.timestamp))));
-      const earliestDay = allDays.size ? [...allDays].sort()[0] : null;
-
       const xpByDay = {};   // non-maxed skill XP per UK day
       const bossByDay = {}; // total activity-score gain per UK day
       entries.forEach(e => {
         const day = londonDateKey(new Date(e.timestamp));
-        if (day === earliestDay) return; // first-poll baseline, not real single-day gains
         Object.entries(e.gains || {}).forEach(([sk, xp]) => {
           if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
           xpByDay[day] = (xpByDay[day] || 0) + xp;
         });
-        if (day === BOSS_RECORD_EXCLUDE_DAY) return; // recalibration artifact - boss record only
-        Object.entries(e.activityGains || {}).forEach(([, score]) => {
-          if (!(score > 0)) return;
-          bossByDay[day] = (bossByDay[day] || 0) + score;
-        });
+        if (!BOSS_RECORD_EXCLUDED_DAYS.has(day)) {
+          Object.entries(e.activityGains || {}).forEach(([, score]) => {
+            if (!(score > 0)) return;
+            bossByDay[day] = (bossByDay[day] || 0) + score;
+          });
+        }
       });
-
 
       const bestOf = (map) => {
         let bestDay = null, bestVal = 0;
