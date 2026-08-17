@@ -200,14 +200,13 @@
   .cal-day:hover { outline: 1px solid var(--text-faint); outline-offset: 1px; }
   .cal-week.cal-month-gap { margin-left: 10px; }
   .cal-day-info {
-    display: none; position: absolute; z-index: 20;
-    bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
+    display: none; position: fixed; z-index: 9999;
+    transform: translate(-50%, -100%);
     background: #05070a; border: 1px solid var(--panel-border); border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.6);
     padding: 6px 8px; font-size: 0.68rem; color: var(--text-dim);
-    white-space: nowrap; max-width: 260px;
+    white-space: nowrap; max-width: 260px; pointer-events: none;
   }
-  .cal-day:hover .cal-day-info { display: block; }
   .cal-day-info .csi-date { color: var(--text); font-weight: 600; }
   .cal-day-info .csi-xp { color: var(--accent); font-weight: 700; }
   .cal-day-info .csi-xp-maxed { color: var(--text-faint); font-weight: 600; font-size: 0.85em; opacity: 0.85; }
@@ -724,6 +723,23 @@
     });
     function londonDateKey(d) { return LONDON_FMT.format(d); }
 
+    // Single shared tooltip element for all calendar day-hovers, created
+    // once and appended directly to <body> - position:fixed means it's
+    // never subject to any ancestor's overflow clipping (cal-wrap,
+    // player-col, etc.), unlike a tooltip nested inside the hovered cell.
+    let sharedCalTooltip = null;
+    function getCalTooltip() {
+      if (!sharedCalTooltip) {
+        sharedCalTooltip = document.createElement("div");
+        sharedCalTooltip.className = "cal-day-info";
+        document.body.appendChild(sharedCalTooltip);
+      }
+      return sharedCalTooltip;
+    }
+    function hideCalTooltip() {
+      getCalTooltip().style.display = "none";
+    }
+
     // Finds the single best XP day and best boss-kill day across the
     // player's whole history, using the same UK-calendar-day bucketing the
     // calendar heatmap uses. Best XP day excludes XP in already-maxed (99)
@@ -805,9 +821,11 @@
       const byDay = {};
       const breakdownByDay = {};
       entries.forEach(e => {
-        if (!e.totalGain || e.totalGain <= 0) return;
+        const hasXp = e.totalGain > 0;
+        const hasActivity = e.activityGains && Object.keys(e.activityGains).length > 0;
+        if (!hasXp && !hasActivity) return;
         const day = londonDateKey(new Date(e.timestamp));
-        byDay[day] = (byDay[day] || 0) + e.totalGain;
+        byDay[day] = (byDay[day] || 0) + (e.totalGain || 0);
 
         if (!breakdownByDay[day]) breakdownByDay[day] = {};
         const bucket = breakdownByDay[day];
@@ -901,6 +919,15 @@
           (breakdown.trim() ? '<div class="cal-day-breakdown">' + breakdown + '</div>' : "");
       }
 
+      function showCalTooltip(cell, key, xp) {
+        const tip = getCalTooltip();
+        tip.innerHTML = buildDayInfo(key, xp);
+        tip.style.display = "block";
+        const rect = cell.getBoundingClientRect();
+        tip.style.left = (rect.left + rect.width / 2) + "px";
+        tip.style.top = (rect.top - 6) + "px";
+      }
+
       let cur = new Date(start);
       let lastMonth = -1;
       let isFirstWeek = true;
@@ -927,10 +954,13 @@
           } else {
             const xp = nonMaxedByDay[key] || 0;
             cell.className = "cal-day cal-lvl-" + levelFor(xp);
-            const info = document.createElement("div");
-            info.className = "cal-day-info";
-            info.innerHTML = buildDayInfo(key, xp);
-            cell.appendChild(info);
+            // Uses the single shared fixed-position tooltip (see below)
+            // rather than a tooltip nested inside this cell - a nested one
+            // gets silently clipped by cal-wrap's overflow-x:auto (which
+            // forces overflow-y to clip too, per the CSS spec), cutting the
+            // tooltip off for cells anywhere near the top of the grid.
+            cell.addEventListener("mouseenter", () => showCalTooltip(cell, key, xp));
+            cell.addEventListener("mouseleave", hideCalTooltip);
           }
           week.appendChild(cell);
           cur.setUTCDate(cur.getUTCDate() + 1);
