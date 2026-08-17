@@ -729,6 +729,13 @@
       const entries = (history && history.history) ? history.history : [];
       const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
 
+      // 2026-08-07 was the one-off name-matching recalibration day: that
+      // run's activityGains are a migration artifact (corrected boss names
+      // showing up as a huge "gain" against the old mislabeled baseline),
+      // not real play, so it's excluded from the boss-kill record. XP was
+      // never affected by the mislabel, so the XP record is left alone.
+      const BOSS_RECORD_EXCLUDE_DAY = "2026-08-07";
+
       const xpByDay = {};   // non-maxed skill XP per UK day
       const bossByDay = {}; // total activity-score gain per UK day
       entries.forEach(e => {
@@ -737,6 +744,7 @@
           if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
           xpByDay[day] = (xpByDay[day] || 0) + xp;
         });
+        if (day === BOSS_RECORD_EXCLUDE_DAY) return; // skip calibration artifact for boss record only
         Object.entries(e.activityGains || {}).forEach(([, score]) => {
           if (!(score > 0)) return;
           bossByDay[day] = (bossByDay[day] || 0) + score;
