@@ -722,29 +722,32 @@
     // Finds the single best XP day and best boss-kill day across the
     // player's whole history, using the same UK-calendar-day bucketing the
     // calendar heatmap uses. Best XP day excludes XP in already-maxed (99)
-    // skills, matching how the calendar/session log count XP everywhere
-    // else. Best boss day is the raw total of all activity-score gains
+    // skills; best boss day is the raw total of all activity-score gains
     // (boss KC, clues, etc.) that day.
+    //
+    // The player's earliest data day is excluded from BOTH records: the
+    // first-ever poll has no previous snapshot to diff against, so that
+    // day's gains are really the account's entire pre-existing lifetime
+    // totals recorded at once, not a single day's play. (This also
+    // naturally covers the one-off name-matching recalibration artifact if
+    // it happened to be the earliest entry.)
     function renderRecords(player, history) {
       const entries = (history && history.history) ? history.history : [];
       const isMaxed = sk => player.stats && player.stats[sk] && player.stats[sk].level >= 99;
 
-      // 2026-08-07 was the one-off name-matching recalibration day: that
-      // run's activityGains are a migration artifact (corrected boss names
-      // showing up as a huge "gain" against the old mislabeled baseline),
-      // not real play, so it's excluded from the boss-kill record. XP was
-      // never affected by the mislabel, so the XP record is left alone.
-      const BOSS_RECORD_EXCLUDE_DAY = "2026-08-07";
+      const allDays = new Set();
+      entries.forEach(e => allDays.add(londonDateKey(new Date(e.timestamp))));
+      const earliestDay = allDays.size ? [...allDays].sort()[0] : null;
 
       const xpByDay = {};   // non-maxed skill XP per UK day
       const bossByDay = {}; // total activity-score gain per UK day
       entries.forEach(e => {
         const day = londonDateKey(new Date(e.timestamp));
+        if (day === earliestDay) return; // first-poll baseline, not real single-day gains
         Object.entries(e.gains || {}).forEach(([sk, xp]) => {
           if (sk === "Overall" || !(xp > 0) || isMaxed(sk)) return;
           xpByDay[day] = (xpByDay[day] || 0) + xp;
         });
-        if (day === BOSS_RECORD_EXCLUDE_DAY) return; // skip calibration artifact for boss record only
         Object.entries(e.activityGains || {}).forEach(([, score]) => {
           if (!(score > 0)) return;
           bossByDay[day] = (bossByDay[day] || 0) + score;
