@@ -924,7 +924,16 @@
         tip.innerHTML = buildDayInfo(key, xp);
         tip.style.display = "block";
         const rect = cell.getBoundingClientRect();
-        tip.style.left = (rect.left + rect.width / 2) + "px";
+        const margin = 8;
+        // Measured after setting display:block above, so offsetWidth is
+        // accurate for this content - clamped so the tooltip's own edges
+        // never run past the viewport, since it's centered on the cell by
+        // default (translateX(-50%)) and cells near the left/right edge
+        // don't leave room for that centering.
+        const halfWidth = tip.offsetWidth / 2;
+        let left = rect.left + rect.width / 2;
+        left = Math.max(margin + halfWidth, Math.min(window.innerWidth - margin - halfWidth, left));
+        tip.style.left = left + "px";
         tip.style.top = (rect.top - 6) + "px";
       }
 
