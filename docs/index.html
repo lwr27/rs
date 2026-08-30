@@ -316,6 +316,7 @@
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
+      <div id="instanceBanner" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1002; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:10px 16px; color:var(--text-dim); font-size:0.85rem; text-align:center; max-width:320px;">No map imagery here — likely inside a player-owned house or other instance</div>
     </div>
   </div>
 
@@ -1335,6 +1336,13 @@
     // fetches for the same five tiles).
     const requestedTileUrls = new Set();
     const loadedTileUrls = new Set();
+    // Tiles that genuinely 404'd (no image exists there at all) - distinct
+    // from loadedTileUrls, which just tracks "settled" (loaded OR failed)
+    // for the teleport-flash timing logic. Used to detect when playback is
+    // sitting somewhere with no real map coverage (e.g. inside a house or
+    // other instanced area, which the game renders using coordinates that
+    // were never meant to correspond to real overworld imagery).
+    const failedTileUrls = new Set();
     // Keeps references to in-flight prefetch Image objects so the browser
     // can't garbage-collect (and silently abort) an unreferenced image
     // mid-fetch. Trimmed periodically rather than left to grow forever.
@@ -1383,7 +1391,7 @@
         const img = new Image();
         if (priority) img.fetchPriority = priority; // ignored harmlessly where unsupported
         img.onload = () => loadedTileUrls.add(url);
-        img.onerror = () => loadedTileUrls.add(url); // don't hang forever on a missing tile
+        img.onerror = () => { loadedTileUrls.add(url); failedTileUrls.add(url); }; // don't hang forever on a missing tile
         img.src = url;
         prefetchImageRefs.push(img);
       });
@@ -1419,10 +1427,12 @@
     // matches the <hash>-YYYY-MM.json naming the plugin uploads under
     // route-data/. Add an entry here for each player once their hash is
     // known (visible in the filename after their first real upload).
+    // Colors match the same scheme used elsewhere (e.g. the desktop
+    // combined-feed widget): 5JV pink, 6LR orange, Iron Shiifty red.
     const ROUTE_PLAYERS = [
-      { name: "6LR", hash: "-8886915111317579996" },
-      { name: "5JV", hash: "" },
-      { name: "Iron Shiifty", hash: "6474522712572188208" }
+      { name: "6LR", hash: "-8886915111317579996", color: "#ff9f43" },
+      { name: "5JV", hash: "", color: "#ff6bcb" },
+      { name: "Iron Shiifty", hash: "6474522712572188208", color: "#ff3b3b" }
     ];
 
     function currentYearMonth() {
@@ -1473,6 +1483,23 @@
       });
     }
 
+    // Checks whether the tile currently under the map's center has
+    // genuinely failed to load (a real 404, tracked in failedTileUrls) and
+    // shows/hides the "no map imagery here" banner accordingly. Not
+    // perfectly precise (checks the center tile only, at the current zoom)
+    // but good enough to flag houses/instances without needing any plugin
+    // changes - those areas simply have no tile images anywhere at all,
+    // so their failure is consistent and easy to detect this way.
+    function updateInstanceBanner() {
+      const banner = document.getElementById("instanceBanner");
+      if (!banner || !leafletMap || !planeTileLayer) return;
+      const center = leafletMap.getCenter();
+      const zoom = Math.round(leafletMap.getZoom());
+      const coords = tileCoordsAround(center, zoom, 0)[0]; // just the center tile
+      const url = planeTileLayer.getTileUrl(coords);
+      banner.style.display = failedTileUrls.has(url) ? "block" : "none";
+    }
+
     function initLeafletMap() {
       if (leafletMap) return;
       // Deliberately NO `crs` option - uses Leaflet's default EPSG3857,
@@ -1498,6 +1525,15 @@
                        // so nearby pans/jumps are more likely to already have
                        // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
+
+      // Also track failures for tiles Leaflet itself tries to display
+      // (not just prefetched ones) - persists across plane switches since
+      // switchPlane only calls setUrl() on this same layer instance.
+      planeTileLayer.on("tileerror", (e) => {
+        if (e && e.tile && e.tile.src) failedTileUrls.add(e.tile.src);
+        updateInstanceBanner();
+      });
+      leafletMap.on("moveend zoomend", updateInstanceBanner);
 
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
 
@@ -1749,10 +1785,10 @@
       if (playbackHalo) { leafletMap.removeLayer(playbackHalo); playbackHalo = null; }
 
       playbackHalo = L.circleMarker([0, 0], {
-        radius: 9, color: "none", fillColor: "#ff3b3b", fillOpacity: 0.25
+        radius: 9, color: "none", fillColor: currentPlayerColor, fillOpacity: 0.25
       }).addTo(leafletMap);
       playbackMarker = L.circleMarker([0, 0], {
-        radius: 6, color: "#fff", weight: 2, fillColor: "#ff3b3b", fillOpacity: 1
+        radius: 6, color: "#fff", weight: 2, fillColor: currentPlayerColor, fillOpacity: 1
       }).addTo(leafletMap);
 
       const FOLLOW_ZOOM = 8;
@@ -1899,6 +1935,7 @@
         const totalSec = t1 - t0;
         if (statusEl) statusEl.textContent = formatDuration(elapsedSec) + " / " + formatDuration(totalSec);
         if (scrubber) scrubber.value = Math.round(frac * 1000);
+        updateInstanceBanner();
       }
 
       activePlayback = {
@@ -1959,6 +1996,9 @@
     // button (and any future controls) can reference the live list rather
     // than a stale closure captured at setup time.
     let currentSessions = [];
+    // The currently selected player's color, used for the playback marker/
+    // halo and route line so each player's route is visually distinct.
+    let currentPlayerColor = "#ff3b3b";
 
     async function loadAndRenderPlayer(hash) {
       currentSessions = await fetchPlayerSessions(hash);
@@ -1999,6 +2039,7 @@
         playerSelect.addEventListener("change", async () => {
           const p = ROUTE_PLAYERS[parseInt(playerSelect.value, 10)];
           if (p) {
+            currentPlayerColor = p.color || currentPlayerColor;
             await loadAndRenderPlayer(p.hash);
             loadSelectedSession();
           }
@@ -2046,7 +2087,10 @@
       }
 
       // Load the first known player on open.
-      if (ROUTE_PLAYERS.length) loadAndRenderPlayer(ROUTE_PLAYERS[0].hash);
+      if (ROUTE_PLAYERS.length) {
+        currentPlayerColor = ROUTE_PLAYERS[0].color || currentPlayerColor;
+        loadAndRenderPlayer(ROUTE_PLAYERS[0].hash);
+      }
     }
 
     // Very subtle seasonal tint - a faint colour shift in the background
