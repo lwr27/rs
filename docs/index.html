@@ -1483,21 +1483,29 @@
       });
     }
 
-    // Checks whether the tile currently under the map's center has
-    // genuinely failed to load (a real 404, tracked in failedTileUrls) and
-    // shows/hides the "no map imagery here" banner accordingly. Not
-    // perfectly precise (checks the center tile only, at the current zoom)
-    // but good enough to flag houses/instances without needing any plugin
-    // changes - those areas simply have no tile images anywhere at all,
-    // so their failure is consistent and easy to detect this way.
+    // Rolling timestamps of the last successful/failed real tile load, used
+    // by updateInstanceBanner below. Simpler and more robust than trying to
+    // predict "which tile URL should be under the cursor right now" and
+    // matching it against a lookup set - that approach broke because it had
+    // to reimplement Leaflet's internal TMS row-flip by hand, and a mismatch
+    // there made the banner fire almost everywhere instead of just in
+    // genuine no-coverage areas.
+    let lastTileLoadTime = 0;
+    let lastTileErrorTime = 0;
+    const INSTANCE_BANNER_WINDOW_MS = 1200;
+
+    // Shows the "no map imagery here" banner only while tiles have
+    // recently failed to load with no recent successes - i.e. Leaflet is
+    // currently, actively failing to get real tile data for what's on
+    // screen, which is what genuinely happens in a house/instance (nothing
+    // ever loads there) versus an ordinary spot that just loaded slowly.
     function updateInstanceBanner() {
       const banner = document.getElementById("instanceBanner");
-      if (!banner || !leafletMap || !planeTileLayer) return;
-      const center = leafletMap.getCenter();
-      const zoom = Math.round(leafletMap.getZoom());
-      const coords = tileCoordsAround(center, zoom, 0)[0]; // just the center tile
-      const url = planeTileLayer.getTileUrl(coords);
-      banner.style.display = failedTileUrls.has(url) ? "block" : "none";
+      if (!banner) return;
+      const now = Date.now();
+      const recentlyFailed = lastTileErrorTime > 0 && (now - lastTileErrorTime) < INSTANCE_BANNER_WINDOW_MS;
+      const recentlyLoaded = lastTileLoadTime > 0 && (now - lastTileLoadTime) < INSTANCE_BANNER_WINDOW_MS;
+      banner.style.display = (recentlyFailed && !recentlyLoaded) ? "block" : "none";
     }
 
     function initLeafletMap() {
@@ -1526,13 +1534,12 @@
                        // tiles cached rather than showing black while they load
       }).addTo(leafletMap);
 
-      // Also track failures for tiles Leaflet itself tries to display
-      // (not just prefetched ones) - persists across plane switches since
-      // switchPlane only calls setUrl() on this same layer instance.
-      planeTileLayer.on("tileerror", (e) => {
-        if (e && e.tile && e.tile.src) failedTileUrls.add(e.tile.src);
-        updateInstanceBanner();
-      });
+      // Real (non-prefetched) tile load/error events, used only to drive
+      // the instance banner above - a rolling "recently failed, nothing
+      // recently succeeded" window rather than a permanent lookup set, so
+      // a single stale failure can't wrongly flag an ordinary later spot.
+      planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); updateInstanceBanner(); });
+      planeTileLayer.on("tileerror", () => { lastTileErrorTime = Date.now(); updateInstanceBanner(); });
       leafletMap.on("moveend zoomend", updateInstanceBanner);
 
       routeLayerGroup = L.layerGroup().addTo(leafletMap);
