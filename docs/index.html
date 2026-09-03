@@ -320,7 +320,7 @@
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
-      <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none;"></canvas>
+      <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none; transition:opacity 150ms ease;"></canvas>
       <div id="instanceBanner" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1002; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:10px 16px; color:var(--text-dim); font-size:0.85rem; text-align:center; max-width:320px;">No map imagery here — likely inside a player-owned house or other instance</div>
     </div>
   </div>
@@ -1419,7 +1419,19 @@
 
       const fogBtn = document.getElementById("fogToggleBtn");
       if (fogBtn) fogBtn.addEventListener("click", toggleFog);
-      leafletMap.on("move zoom", () => { if (fogEnabled) redrawFog(); });
+      // Redraw the real (punched-holes) fog only once the pan/zoom has
+      // actually settled, not on every intermediate frame of Leaflet's own
+      // zoom animation - the hole positions are computed from screen pixel
+      // coordinates at a specific zoom, so recalculating them mid-animation
+      // fights against the animation and looks janky. While it's actually
+      // animating, show plain full-coverage fog instead (everything hidden
+      // until the redraw), rather than a stale, misaligned set of holes.
+      leafletMap.on("movestart zoomstart", () => {
+        if (fogEnabled) fillSolidFog();
+      });
+      leafletMap.on("moveend zoomend", () => {
+        if (fogEnabled) redrawFog();
+      });
     }
 
     // ---- Heatmap ----
@@ -1553,6 +1565,26 @@
     // cell within (a small margin around) what's actually visible - rather
     // than iterating every cell the player has ever visited, the viewport
     // is converted back to a game-coordinate range via latLngToGame first.
+    // Plain full-coverage fill with no holes punched - shown for the
+    // duration of a pan/zoom animation, since the real hole positions
+    // (computed from screen pixel coordinates at a specific zoom) would be
+    // visibly misaligned while the map itself is still animating between
+    // zoom levels. Swapped back out for the real redrawFog() once the
+    // animation settles.
+    function fillSolidFog() {
+      const canvas = document.getElementById("fogCanvas");
+      const mapDiv = document.getElementById("leafletMap");
+      if (!canvas || !mapDiv) return;
+      const w = mapDiv.clientWidth, h = mapDiv.clientHeight;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.globalCompositeOperation = "source-over";
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = FOG_COLOR;
+      ctx.fillRect(0, 0, w, h);
+    }
+
     function redrawFog() {
       if (!fogEnabled || !leafletMap) return;
       const canvas = document.getElementById("fogCanvas");
