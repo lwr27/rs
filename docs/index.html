@@ -309,6 +309,7 @@
     <div style="position:fixed; inset:0; z-index:1000; background:#000;">
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
       <button id="heatmapToggleBtn" class="tab-btn" style="position:absolute; top:10px; right:110px; z-index:1001; padding:6px 14px;">🔥 Heatmap</button>
+      <button id="fogToggleBtn" class="tab-btn" style="position:absolute; top:10px; right:220px; z-index:1001; padding:6px 14px;">🌫️ Fog</button>
       <div id="planeControl" style="position:absolute; top:10px; left:70px; z-index:1001; display:flex; gap:4px; background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--panel-border);"></div>
       <div style="position:absolute; bottom:10px; left:10px; right:10px; z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
         <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
@@ -319,6 +320,7 @@
         <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0;"></span>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
+      <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none;"></canvas>
       <div id="instanceBanner" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1002; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:10px 16px; color:var(--text-dim); font-size:0.85rem; text-align:center; max-width:320px;">No map imagery here — likely inside a player-owned house or other instance</div>
     </div>
   </div>
@@ -1414,6 +1416,10 @@
 
       const heatmapBtn = document.getElementById("heatmapToggleBtn");
       if (heatmapBtn) heatmapBtn.addEventListener("click", toggleHeatmap);
+
+      const fogBtn = document.getElementById("fogToggleBtn");
+      if (fogBtn) fogBtn.addEventListener("click", toggleFog);
+      leafletMap.on("move zoom", () => { if (fogEnabled) redrawFog(); });
     }
 
     // ---- Heatmap ----
@@ -1487,6 +1493,132 @@
       await refreshHeatmapLayer();
     }
 
+    // ---- Fog of war ----
+    //
+    // Inverse of the heatmap: instead of showing where a player spends the
+    // most time, this shows which parts of the map they've simply never
+    // been to at all. Game coordinates are bucketed into a coarse grid
+    // (FOG_CELL_TILES per cell) - a cell counts as "explored" if any
+    // walk/teleport ever touched it, across every available month.
+    //
+    // Walk events only store waypoints at turns (see recordMovement in the
+    // plugin), so a long straight walk has just two recorded points - that
+    // alone would only reveal the start/end cell and miss everything in
+    // between. Each leg is interpolated in small steps so the full path
+    // gets marked, not just its corners.
+    const FOG_CELL_TILES = 6;
+    const FOG_COLOR = "rgba(5,7,10,0.82)";
+    const exploredCellsByHash = {}; // hash -> { plane: Set("gx,gy") }
+    let fogEnabled = false;
+
+    function markFogCell(bucket, gameX, gameY) {
+      const gx = Math.floor(gameX / FOG_CELL_TILES);
+      const gy = Math.floor(gameY / FOG_CELL_TILES);
+      bucket.add(gx + "," + gy);
+    }
+
+    async function buildExploredCells(hash) {
+      const months = await fetchAvailableMonths(hash);
+      const byPlane = {};
+      for (const ym of months) {
+        const sessions = await fetchPlayerSessions(hash, ym);
+        sessions.forEach(session => {
+          (session.events || []).forEach(ev => {
+            if (ev.ty === "bank" || !ev.f || !ev.t) return;
+            const plane = ev.f[2];
+            if (!byPlane[plane]) byPlane[plane] = new Set();
+            const bucket = byPlane[plane];
+            if (ev.ty === "walk") {
+              const pts = eventGameCoords(ev);
+              for (let i = 0; i + 1 < pts.length; i++) {
+                const a = pts[i], b = pts[i + 1];
+                const dist = Math.hypot(b.x - a.x, b.y - a.y);
+                const steps = Math.max(1, Math.ceil(dist / (FOG_CELL_TILES / 2)));
+                for (let s = 0; s <= steps; s++) {
+                  const t = s / steps;
+                  markFogCell(bucket, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                }
+              }
+            } else {
+              markFogCell(bucket, ev.t[0], ev.t[1]);
+            }
+          });
+        });
+      }
+      return byPlane;
+    }
+
+    // Redraws the fog canvas for the current viewport: fills it with the
+    // fog color, then punches soft transparent holes over every explored
+    // cell within (a small margin around) what's actually visible - rather
+    // than iterating every cell the player has ever visited, the viewport
+    // is converted back to a game-coordinate range via latLngToGame first.
+    function redrawFog() {
+      if (!fogEnabled || !leafletMap) return;
+      const canvas = document.getElementById("fogCanvas");
+      const mapDiv = document.getElementById("leafletMap");
+      if (!canvas || !mapDiv) return;
+      const w = mapDiv.clientWidth, h = mapDiv.clientHeight;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.globalCompositeOperation = "source-over";
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = FOG_COLOR;
+      ctx.fillRect(0, 0, w, h);
+
+      const cells = (exploredCellsByHash[currentPlayerHash] &&
+        exploredCellsByHash[currentPlayerHash][currentPlane]) || null;
+      if (!cells || !cells.size) return;
+
+      // Cell size in screen pixels at the current zoom - this map uses a
+      // flat linear projection (see the coordinate-system notes above), so
+      // tiles-per-pixel is constant across the whole map at a given zoom,
+      // not distorted by "latitude" the way real-world Mercator would be.
+      const zoom = leafletMap.getZoom();
+      const pxPerTile = RS_TILE_WIDTH_PX * Math.pow(2, zoom - MAP_MAX_ZOOM);
+      const cellPx = Math.max(1, FOG_CELL_TILES * pxPerTile);
+
+      const topLeftGame = latLngToGame(leafletMap.containerPointToLatLng([0, 0]));
+      const botRightGame = latLngToGame(leafletMap.containerPointToLatLng([w, h]));
+      const gx0 = Math.floor(Math.min(topLeftGame.x, botRightGame.x) / FOG_CELL_TILES) - 1;
+      const gx1 = Math.floor(Math.max(topLeftGame.x, botRightGame.x) / FOG_CELL_TILES) + 1;
+      const gy0 = Math.floor(Math.min(topLeftGame.y, botRightGame.y) / FOG_CELL_TILES) - 1;
+      const gy1 = Math.floor(Math.max(topLeftGame.y, botRightGame.y) / FOG_CELL_TILES) + 1;
+
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "rgba(0,0,0,1)";
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          if (!cells.has(gx + "," + gy)) continue;
+          const centerGameX = (gx + 0.5) * FOG_CELL_TILES;
+          const centerGameY = (gy + 0.5) * FOG_CELL_TILES;
+          const ll = gameToLatLng(centerGameX, centerGameY);
+          const pt = leafletMap.latLngToContainerPoint(ll);
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, cellPx * 0.75, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    async function toggleFog() {
+      fogEnabled = !fogEnabled;
+      const btn = document.getElementById("fogToggleBtn");
+      if (btn) btn.classList.toggle("active", fogEnabled);
+      const canvas = document.getElementById("fogCanvas");
+      if (!fogEnabled) {
+        if (canvas) canvas.style.display = "none";
+        return;
+      }
+      if (canvas) canvas.style.display = "block";
+      if (currentPlayerHash && !exploredCellsByHash[currentPlayerHash]) {
+        exploredCellsByHash[currentPlayerHash] = await buildExploredCells(currentPlayerHash);
+      }
+      redrawFog();
+    }
+
     function switchPlane(plane) {
       if (!leafletMap || !planeTileLayer || plane === currentPlane) return;
       currentPlane = plane;
@@ -1496,6 +1628,7 @@
       const idx = sessionSelect ? parseInt(sessionSelect.value, 10) : NaN;
       if (!isNaN(idx) && currentSessions[idx]) renderSessionPath([currentSessions[idx]]);
       if (heatmapEnabled) refreshHeatmapLayer();
+      if (fogEnabled) redrawFog();
     }
 
     function renderPlaneButtons() {
@@ -1872,6 +2005,12 @@
             await loadAndRenderPlayer(p.hash);
             loadSelectedSession();
             if (heatmapEnabled) await refreshHeatmapLayer();
+            if (fogEnabled) {
+              if (currentPlayerHash && !exploredCellsByHash[currentPlayerHash]) {
+                exploredCellsByHash[currentPlayerHash] = await buildExploredCells(currentPlayerHash);
+              }
+              redrawFog();
+            }
           }
         });
       }
