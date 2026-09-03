@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <style>
   :root {
     --bg: #0d1117;
@@ -307,6 +308,7 @@
   <div class="tab-panel" id="panel-map">
     <div style="position:fixed; inset:0; z-index:1000; background:#000;">
       <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
+      <button id="heatmapToggleBtn" class="tab-btn" style="position:absolute; top:10px; right:110px; z-index:1001; padding:6px 14px;">🔥 Heatmap</button>
       <div id="planeControl" style="position:absolute; top:10px; left:70px; z-index:1001; display:flex; gap:4px; background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--panel-border);"></div>
       <div style="position:absolute; bottom:10px; left:10px; right:10px; z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
         <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
@@ -1409,6 +1411,80 @@
         document.getElementById("panel-skills").classList.add("active");
         document.querySelector('.tab-btn[data-tab="skills"]').classList.add("active");
       });
+
+      const heatmapBtn = document.getElementById("heatmapToggleBtn");
+      if (heatmapBtn) heatmapBtn.addEventListener("click", toggleHeatmap);
+    }
+
+    // ---- Heatmap ----
+    //
+    // Aggregates every recorded position (walk waypoints + teleport
+    // destinations) across ALL of a player's available months into a
+    // density overlay showing where they actually spend the most time -
+    // not just the current session's route, the whole known history.
+    // Cached per player hash so toggling on/off or switching planes
+    // doesn't refetch everything each time.
+    let heatmapLayer = null;
+    let heatmapEnabled = false;
+    const heatmapPointsByHash = {}; // hash -> { plane: [[lat,lng,intensity], ...] }
+
+    // Fetches every available month for this player and buckets every
+    // recorded position by plane. Walk waypoints are weighted lower per
+    // point than teleport destinations (0.5 vs 1) since a single long walk
+    // naturally contributes many points already - this keeps a route
+    // that's just passed through once from looking as "hot" as a spot
+    // that's genuinely been a real destination many times.
+    async function buildHeatmapPoints(hash) {
+      const months = await fetchAvailableMonths(hash);
+      const byPlane = {};
+      for (const ym of months) {
+        const sessions = await fetchPlayerSessions(hash, ym);
+        sessions.forEach(session => {
+          (session.events || []).forEach(ev => {
+            if (ev.ty === "bank" || !ev.f || !ev.t) return;
+            const plane = ev.f[2];
+            if (!byPlane[plane]) byPlane[plane] = [];
+            if (ev.ty === "walk") {
+              eventGameCoords(ev).forEach(p => {
+                const ll = gameToLatLng(p.x, p.y);
+                byPlane[plane].push([ll.lat, ll.lng, 0.5]);
+              });
+            } else {
+              const ll = gameToLatLng(ev.t[0], ev.t[1]);
+              byPlane[plane].push([ll.lat, ll.lng, 1]);
+            }
+          });
+        });
+      }
+      return byPlane;
+    }
+
+    // Rebuilds (or removes) the heatmap layer for whatever player/plane is
+    // currently active. Safe to call any time heatmapEnabled might have
+    // changed, or after switching player/plane while it's on.
+    async function refreshHeatmapLayer() {
+      if (!leafletMap) return;
+      if (!heatmapEnabled) {
+        if (heatmapLayer) { leafletMap.removeLayer(heatmapLayer); heatmapLayer = null; }
+        return;
+      }
+      if (!currentPlayerHash) return;
+      if (!heatmapPointsByHash[currentPlayerHash]) {
+        heatmapPointsByHash[currentPlayerHash] = await buildHeatmapPoints(currentPlayerHash);
+      }
+      const points = (heatmapPointsByHash[currentPlayerHash] &&
+        heatmapPointsByHash[currentPlayerHash][currentPlane]) || [];
+      if (heatmapLayer) leafletMap.removeLayer(heatmapLayer);
+      heatmapLayer = L.heatLayer(points, {
+        radius: 18, blur: 22, maxZoom: MAP_MAX_ZOOM, max: 3
+      }).addTo(leafletMap);
+    }
+
+    async function toggleHeatmap() {
+      heatmapEnabled = !heatmapEnabled;
+      const btn = document.getElementById("heatmapToggleBtn");
+      if (btn) btn.classList.toggle("active", heatmapEnabled);
+      await refreshHeatmapLayer();
     }
 
     function switchPlane(plane) {
@@ -1419,6 +1495,7 @@
       const sessionSelect = document.getElementById("sessionSelect");
       const idx = sessionSelect ? parseInt(sessionSelect.value, 10) : NaN;
       if (!isNaN(idx) && currentSessions[idx]) renderSessionPath([currentSessions[idx]]);
+      if (heatmapEnabled) refreshHeatmapLayer();
     }
 
     function renderPlaneButtons() {
@@ -1794,6 +1871,7 @@
             currentPlayerHash = p.hash;
             await loadAndRenderPlayer(p.hash);
             loadSelectedSession();
+            if (heatmapEnabled) await refreshHeatmapLayer();
           }
         });
       }
