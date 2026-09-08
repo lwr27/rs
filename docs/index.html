@@ -1413,57 +1413,103 @@
       return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
     }
 
-    function monthsBack(n) {
-      const d = new Date();
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        out.push(d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0"));
-        d.setUTCMonth(d.getUTCMonth() - 1);
-      }
-      return out;
+    // ---- Route data discovery ----
+    //
+    // Layout: route-data/<hash>/<yyyy-mm-dd>.json, one file per account
+    // per day (the plugin's upload format). What exists is read from
+    // route-data/index.json, which a GitHub Action in the repo rewrites
+    // whenever a route file lands. If the index is missing (first deploy,
+    // action not yet run) the GitHub contents API is used as a fallback
+    // so the map still works, at the cost of one API call per player.
+    //
+    // Everything fetched is cached in memory for the life of the page.
+    // Only today's file (still being written) and the index itself bypass
+    // the browser cache; past days are immutable and cache normally.
+    const ROUTE_INDEX_URL = "route-data/index.json";
+    const ROUTE_REPO = "lwr27/rs";
+    let routeIndexPromise = null;
+    let routeIndexFetchedAt = 0;
+    const ROUTE_INDEX_MAX_AGE_MS = 5 * 60 * 1000;
+    const daysCache = {};     // hash -> [yyyy-mm-dd, ...] (sorted ascending)
+    const sessionsCache = {}; // hash + "|" + yyyy-mm-dd -> [sessions]
+
+    function todayUtc() {
+      return new Date().toISOString().slice(0, 10);
     }
 
-    const MONTH_PROBE_COUNT = 24;
-
-    // Route data is cached in memory for the life of the page. The month
-    // list and every month's sessions are fetched at most once per player,
-    // so switching player/month, and building heatmap or fog, never
-    // re-downloads anything already seen. Only the current month can gain
-    // new data while the page is open, so only that one bypasses the
-    // browser cache; past months are immutable and cache normally.
-    const monthsCache = {};   // hash -> [yyyy-mm, ...]
-    const sessionsCache = {}; // hash + "|" + yyyy-mm -> [sessions]
-
-    function routeFetchOptions(yearMonth, extra) {
-      const isCurrent = yearMonth === currentYearMonth();
-      return Object.assign({}, extra || {}, isCurrent ? { cache: "no-store" } : {});
-    }
-    function routeUrl(hash, yearMonth) {
-      const base = "route-data/" + hash + "-" + yearMonth + ".json";
-      return yearMonth === currentYearMonth() ? base + "?t=" + Date.now() : base;
-    }
-
-    async function fetchAvailableMonths(hash) {
-      if (monthsCache[hash]) return monthsCache[hash];
-      const candidates = monthsBack(MONTH_PROBE_COUNT);
-      const checks = await Promise.all(candidates.map(async (ym) => {
+    async function fetchRouteIndex() {
+      const stale = Date.now() - routeIndexFetchedAt > ROUTE_INDEX_MAX_AGE_MS;
+      if (routeIndexPromise && !stale) return routeIndexPromise;
+      routeIndexFetchedAt = Date.now();
+      routeIndexPromise = (async () => {
         try {
-          const res = await fetch(routeUrl(hash, ym), routeFetchOptions(ym, { method: "HEAD" }));
-          return res.ok ? ym : null;
-        } catch {
-          return null;
+          const res = await fetch(ROUTE_INDEX_URL + "?t=" + Date.now(), { cache: "no-store" });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.players) return data;
+          }
+        } catch (err) {
+          console.debug("Route index unavailable, falling back to GitHub API", err);
         }
-      }));
-      monthsCache[hash] = checks.filter(Boolean);
-      return monthsCache[hash];
+        return null;
+      })();
+      return routeIndexPromise;
     }
 
-    async function fetchPlayerSessions(hash, yearMonth) {
-      const key = hash + "|" + yearMonth;
+    // Fallback: list the player's folder via the GitHub contents API.
+    // Unauthenticated limit is 60 requests/hour per IP, plenty for a
+    // page load but not something to lean on, hence the index.
+    async function listDaysViaGitHubApi(hash) {
+      try {
+        const url = "https://api.github.com/repos/" + ROUTE_REPO + "/contents/docs/route-data/" + hash;
+        const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+        if (!res.ok) return [];
+        const entries = await res.json();
+        if (!Array.isArray(entries)) return [];
+        return entries
+          .map(e => e.name)
+          .filter(n => /^\d{4}-\d{2}-\d{2}\.json$/.test(n))
+          .map(n => n.slice(0, 10))
+          .sort();
+      } catch (err) {
+        console.error("GitHub API listing failed:", err);
+        return [];
+      }
+    }
+
+    async function fetchAvailableDays(hash) {
+      if (daysCache[hash]) return daysCache[hash];
+      const index = await fetchRouteIndex();
+      let days;
+      if (index && index.players && index.players[hash] && Array.isArray(index.players[hash].days)) {
+        days = index.players[hash].days.slice().sort();
+      } else {
+        days = await listDaysViaGitHubApi(hash);
+      }
+      daysCache[hash] = days;
+      return days;
+    }
+
+    // Months, newest first, derived from the day list.
+    async function fetchAvailableMonths(hash) {
+      const days = await fetchAvailableDays(hash);
+      const months = Array.from(new Set(days.map(d => d.slice(0, 7))));
+      months.sort().reverse();
+      return months;
+    }
+
+    function dayFileUrl(hash, day) {
+      const base = "route-data/" + hash + "/" + day + ".json";
+      return day === todayUtc() ? base + "?t=" + Date.now() : base;
+    }
+
+    async function fetchDaySessions(hash, day) {
+      const key = hash + "|" + day;
       if (sessionsCache[key]) return sessionsCache[key];
       let sessions = [];
       try {
-        const res = await fetch(routeUrl(hash, yearMonth), routeFetchOptions(yearMonth));
+        const res = await fetch(dayFileUrl(hash, day),
+          day === todayUtc() ? { cache: "no-store" } : {});
         if (res.ok) {
           const data = await res.json();
           sessions = Array.isArray(data) ? data : [];
@@ -1475,12 +1521,30 @@
       return sessions;
     }
 
-    // Every session across every available month for a player, in month
-    // order. Backs the heatmap and fog so both share one download.
+    // Every session in a month: all of that month's day files, deduped
+    // by session id and sorted by start.
+    async function fetchPlayerSessions(hash, yearMonth) {
+      const days = (await fetchAvailableDays(hash)).filter(d => d.startsWith(yearMonth));
+      const perDay = await Promise.all(days.map(d => fetchDaySessions(hash, d)));
+      return dedupeSessions(perDay.flat());
+    }
+
+    // Every session across every available day for a player. Backs the
+    // heatmap and fog so both share one download.
     async function fetchAllPlayerSessions(hash) {
-      const months = await fetchAvailableMonths(hash);
-      const perMonth = await Promise.all(months.map(ym => fetchPlayerSessions(hash, ym)));
-      return perMonth.flat();
+      const days = await fetchAvailableDays(hash);
+      const perDay = await Promise.all(days.map(d => fetchDaySessions(hash, d)));
+      return dedupeSessions(perDay.flat());
+    }
+
+    function dedupeSessions(sessions) {
+      const byId = new Map();
+      sessions.forEach(s => {
+        if (!s || !s.id) return;
+        const prev = byId.get(s.id);
+        if (!prev || (s.events || []).length > (prev.events || []).length) byId.set(s.id, s);
+      });
+      return Array.from(byId.values()).sort((a, b) => a.start - b.start);
     }
 
     function populateMonthSelect(months) {
