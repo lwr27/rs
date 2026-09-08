@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <title>OSRS XP Tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://lwr27.github.io" crossorigin />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="leaflet-heat.js"></script>
@@ -1328,7 +1329,9 @@
     // connections per host, so a burst of hundreds of prefetches was
     // starving the tiles actually on screen, which then failed and were
     // never retried - the "black patches until you zoom" symptom.
-    const PREFETCH_MAX_IN_FLIGHT = 3;
+    // Only ever runs while Leaflet has no visible tiles pending, so this
+    // can be fairly generous.
+    const PREFETCH_MAX_IN_FLIGHT = 6;
     const prefetchQueue = [];
     let prefetchInFlight = 0;
     let prefetchPumpTimer = null;
@@ -1345,6 +1348,7 @@
         if (loadedTileUrls.has(url)) continue;
         prefetchInFlight++;
         const img = new Image();
+        img.crossOrigin = "anonymous"; // match the tile layer so the SW cache is shared
         img.fetchPriority = "low";
         const finish = (failed) => {
           prefetchInFlight--;
@@ -1626,7 +1630,10 @@
         maxZoom: MAP_MAX_ZOOM,
         noWrap: true,
         tms: true,
-        keepBuffer: 4
+        keepBuffer: 4,
+        // CORS requests expose the real status, which the service worker
+        // needs so it never caches a failed tile.
+        crossOrigin: "anonymous"
       }).addTo(leafletMap);
 
       planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); noteTileLoad(); updateInstanceBanner(); });
@@ -2329,11 +2336,39 @@
       }
       prefetchUpcomingTeleports(0);
 
+      // Also warm tiles along the next few seconds of route, so smooth
+      // pans during walks land on tiles that are already loaded. Runs at
+      // most every ROUTE_AHEAD_EVERY_MS of real time; dedupe in the
+      // prefetch queue makes repeats free.
+      const ROUTE_AHEAD_MS = 10000;
+      const ROUTE_AHEAD_EVERY_MS = 1500;
+      let lastRouteAheadAt = 0;
+      function prefetchRouteAhead(frac) {
+        const nowMs = performance.now();
+        if (nowMs - lastRouteAheadAt < ROUTE_AHEAD_EVERY_MS || !leafletMap) return;
+        lastRouteAheadAt = nowMs;
+        const zoom = Math.round(leafletMap.getZoom());
+        const targetFrac = Math.min(1, frac + (ROUTE_AHEAD_MS * playbackSpeed) / PLAYBACK_MS);
+        for (let i = findSegmentIndex(segments, frac); i < segments.length; i++) {
+          const seg = segments[i];
+          if (seg.startFrac > targetFrac) break;
+          if (!seg.isWalk) continue;
+          const plane = typeof seg.plane === "number" ? seg.plane : currentPlane;
+          [0, 0.5, 1].forEach(t => {
+            const ll = L.latLng(
+              seg.from.lat + (seg.to.lat - seg.from.lat) * t,
+              seg.from.lng + (seg.to.lng - seg.from.lng) * t);
+            preloadTilesAround(ll, zoom, 1, "low", plane);
+          });
+        }
+      }
+
       function seekTo(frac, snapCamera) {
         frac = Math.min(1, Math.max(0, frac));
         const idx = findSegmentIndex(segments, frac);
         const seg = segments[idx];
         prefetchUpcomingTeleports(idx);
+        if (activePlayback && !activePlayback.paused) prefetchRouteAhead(frac);
         const segFrac = Math.min(1, Math.max(0,
           (frac - seg.startFrac) / Math.max(0.0001, seg.endFrac - seg.startFrac)));
         const lat = seg.from.lat + (seg.to.lat - seg.from.lat) * segFrac;
@@ -2647,6 +2682,12 @@
     }
 
     init();
+
+    // Tile cache (see sw.js). Only map tiles are cached; page and data
+    // files are untouched.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(err => console.debug("SW register failed", err));
+    }
   </script>
 </body>
 </html>
