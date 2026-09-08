@@ -1590,7 +1590,7 @@
     // out to be broken (the image fails to decode), the page drops that
     // entry so the retry goes back to the network instead of hitting the
     // same bad copy again.
-    const TILE_CACHE_NAME = "rs-map-tiles-v1";
+    const TILE_CACHE_NAME = "rs-map-tiles-v2";
     function evictTileFromCache(url) {
       if (!("caches" in window)) return;
       const key = url.split("?")[0];
