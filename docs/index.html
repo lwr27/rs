@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="leaflet-heat.js"></script>
 <style>
   :root {
     --bg: #0d1117;
@@ -370,6 +370,7 @@
         </div>
         <div class="map-bottom-row map-playback">
           <button id="sessionPlayBtn" class="tab-btn map-btn">▶</button>
+          <button id="speedBtn" class="tab-btn map-btn" title="Playback speed">1x</button>
           <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
           <span id="sessionStatus"></span>
         </div>
@@ -1504,6 +1505,26 @@
     let lastTileErrorTime = 0;
     const INSTANCE_BANNER_WINDOW_MS = 1200;
 
+    // Distinguishes "no imagery here" (a few errors, usually inside an
+    // instance) from "tile server unreachable" (nothing but errors for a
+    // sustained stretch), and says so in the status text.
+    let tileErrorsSinceLoad = 0;
+    const TILE_OUTAGE_ERRORS = 12;
+    const TILE_OUTAGE_WINDOW_MS = 8000;
+    function noteTileLoad() {
+      tileErrorsSinceLoad = 0;
+      const el = document.getElementById("sessionStatus");
+      if (el && el.dataset.outage) { el.dataset.outage = ""; el.textContent = ""; }
+    }
+    function noteTileError() {
+      tileErrorsSinceLoad++;
+      const quietFor = Date.now() - lastTileLoadTime;
+      if (tileErrorsSinceLoad >= TILE_OUTAGE_ERRORS && quietFor > TILE_OUTAGE_WINDOW_MS) {
+        const el = document.getElementById("sessionStatus");
+        if (el) { el.dataset.outage = "1"; el.textContent = "Map tiles unreachable"; }
+      }
+    }
+
     function updateInstanceBanner() {
       const banner = document.getElementById("instanceBanner");
       if (!banner) return;
@@ -1568,8 +1589,8 @@
         keepBuffer: 4
       }).addTo(leafletMap);
 
-      planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); updateInstanceBanner(); });
-      planeTileLayer.on("tileerror", () => { lastTileErrorTime = Date.now(); updateInstanceBanner(); });
+      planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); noteTileLoad(); updateInstanceBanner(); });
+      planeTileLayer.on("tileerror", () => { lastTileErrorTime = Date.now(); noteTileError(); updateInstanceBanner(); });
       planeTileLayer.on("load", pumpPrefetchQueue);
       leafletMap.on("moveend zoomend", updateInstanceBanner);
 
@@ -2046,12 +2067,37 @@
       requestAnimationFrame(tick);
     }
 
+    // Playback speed multiplier, cycled by the speed button.
+    const PLAYBACK_SPEEDS = [1, 2, 4];
+    let playbackSpeed = 1;
+    function cyclePlaybackSpeed() {
+      const i = PLAYBACK_SPEEDS.indexOf(playbackSpeed);
+      playbackSpeed = PLAYBACK_SPEEDS[(i + 1) % PLAYBACK_SPEEDS.length];
+      const btn = document.getElementById("speedBtn");
+      if (btn) btn.textContent = playbackSpeed + "x";
+    }
+
+    // The frame loop only runs while something is actually playing. It
+    // stops itself when playback pauses or finishes, and anything that
+    // starts playback calls ensureTickerRunning() to bring it back.
+    let tickerRunning = false;
+    function ensureTickerRunning() {
+      if (tickerRunning) return;
+      tickerRunning = true;
+      lastFrameTime = null;
+      requestAnimationFrame(globalPlaybackTick);
+    }
+
     function globalPlaybackTick(now) {
+      if (!activePlayback || activePlayback.paused) {
+        tickerRunning = false;
+        return;
+      }
       if (lastFrameTime === null) lastFrameTime = now;
-      const dt = now - lastFrameTime;
+      const dt = (now - lastFrameTime) * playbackSpeed;
       lastFrameTime = now;
 
-      if (activePlayback && !activePlayback.paused) {
+      {
         if (activePlayback.flashing) {
           const elapsed = now - activePlayback.flashStart;
           const urls = activePlayback.flashTileUrls;
@@ -2094,7 +2140,6 @@
       }
       requestAnimationFrame(globalPlaybackTick);
     }
-    requestAnimationFrame(globalPlaybackTick);
 
     function setPlayButtonIcon(showPlay) {
       const btn = document.getElementById("sessionPlayBtn");
@@ -2258,6 +2303,7 @@
       activePlayback.paused = !activePlayback.paused;
       lastFrameTime = null;
       setPlayButtonIcon(activePlayback.paused);
+      if (!activePlayback.paused) ensureTickerRunning();
     }
 
     function stepFrame(direction) {
@@ -2283,6 +2329,7 @@
         activePlayback.paused = false;
         lastFrameTime = null;
         setPlayButtonIcon(false);
+        ensureTickerRunning();
       }
     }
 
@@ -2297,9 +2344,15 @@
       await loadSessionsForMonth(hash, defaultMonth);
     }
 
+    function setSessionStatus(text) {
+      const el = document.getElementById("sessionStatus");
+      if (el) el.textContent = text;
+    }
+
     async function loadSessionsForMonth(hash, yearMonth) {
       currentSessions = await fetchPlayerSessions(hash, yearMonth);
       populateSessionSelect(currentSessions);
+      if (!currentSessions.length) setSessionStatus("No route data for this month");
     }
 
     function loadSelectedSession() {
@@ -2355,6 +2408,30 @@
           }
         });
       }
+
+      const speedBtn = document.getElementById("speedBtn");
+      if (speedBtn) speedBtn.addEventListener("click", cyclePlaybackSpeed);
+
+      // Map tab keyboard: space play/pause, left/right step a segment.
+      document.addEventListener("keydown", (e) => {
+        const mapPanel = document.getElementById("panel-map");
+        if (!mapPanel || !mapPanel.classList.contains("active")) return;
+        const tag = (e.target && e.target.tagName) || "";
+        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+        if (e.code === "Space") {
+          e.preventDefault();
+          if (!activePlayback) {
+            const idx = parseInt(sessionSelect.value, 10);
+            if (!isNaN(idx) && currentSessions[idx]) playSession(currentSessions[idx]);
+          } else {
+            playPause();
+          }
+        } else if (e.code === "ArrowLeft") {
+          e.preventDefault(); stepFrame(-1);
+        } else if (e.code === "ArrowRight") {
+          e.preventDefault(); stepFrame(1);
+        }
+      });
 
       if (playBtn) playBtn.addEventListener("click", () => {
         if (!activePlayback) {
@@ -2426,21 +2503,20 @@
       }
     }
 
-    async function init() {
-      let data;
-      try {
-        const res = await fetch("data/latest.json?t=" + Date.now(), { cache: "no-store" });
-        data = await res.json();
-      } catch (err) {
-        document.getElementById("updated").textContent = "Failed to load data.";
-        console.error(err);
-        return;
-      }
+    async function fetchLatest() {
+      const res = await fetch("data/latest.json?t=" + Date.now(), { cache: "no-store" });
+      return await res.json();
+    }
 
+    let lastRenderedUpdated = null;
+
+    async function renderSkillsBoard(data) {
+      lastRenderedUpdated = data.updated;
       document.getElementById("updated").textContent =
         "Updated " + new Date(data.updated).toLocaleString();
 
       const board = document.getElementById("board");
+      board.innerHTML = "";
       const histories = await Promise.all(data.players.map(p => loadHistory(p.username)));
 
       let globalStartDate = null;
@@ -2455,12 +2531,41 @@
       data.players.forEach((player, i) => {
         board.appendChild(renderColumn(player, histories[i], globalStartDate));
       });
-
-      initTabs();
       renderGauntletLuck(data.players);
       renderRangerLuck(data.players);
+    }
+
+    // The tracker updates hourly; a tab left open picks that up on its own
+    // rather than showing stale numbers until a manual reload. Never
+    // re-renders while a route is playing.
+    const REFRESH_POLL_MS = 5 * 60 * 1000;
+    async function pollForUpdates() {
+      if (document.hidden) return;
+      if (activePlayback && !activePlayback.paused) return;
+      try {
+        const data = await fetchLatest();
+        if (data && data.updated && data.updated !== lastRenderedUpdated) {
+          await renderSkillsBoard(data);
+        }
+      } catch (err) {
+        console.debug("Update poll failed", err);
+      }
+    }
+
+    async function init() {
+      let data;
+      try {
+        data = await fetchLatest();
+      } catch (err) {
+        document.getElementById("updated").textContent = "Failed to load data.";
+        console.error(err);
+        return;
+      }
+      await renderSkillsBoard(data);
+      initTabs();
       renderPatchNotes();
       initSessionControls();
+      setInterval(pollForUpdates, REFRESH_POLL_MS);
     }
 
     init();
