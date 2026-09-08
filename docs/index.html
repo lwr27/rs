@@ -2193,7 +2193,8 @@
       renderPlaneButtons();
       const sessionSelect = document.getElementById("sessionSelect");
       const idx = sessionSelect ? parseInt(sessionSelect.value, 10) : NaN;
-      if (!isNaN(idx) && currentSessions[idx]) renderSessionPath([currentSessions[idx]]);
+      if (activePlayback) activePlayback.redrawTrail();
+      else if (!isNaN(idx) && currentSessions[idx]) renderSessionPath([currentSessions[idx]]);
       if (heatmapEnabled) refreshHeatmapLayer();
       if (fogEnabled) redrawFog();
     }
@@ -2256,6 +2257,19 @@
       return new Array(legs).fill(single);
     }
 
+    function legStyle(run, boat) {
+      const running = run === 1;
+      const unknown = run === null || run === undefined;
+      return {
+        color: currentPlayerColor,
+        weight: running ? 3.5 : 2.5,
+        opacity: unknown ? 0.75 : (running ? 0.95 : 0.45),
+        dashArray: boat ? "6 6" : null,
+        lineJoin: "round",
+        lineCap: "round"
+      };
+    }
+
     // The drawn route uses the player's own colour, muted while walking
     // and vivid while running, so the two states are distinguishable
     // without a second hue that would clash with other players' colours.
@@ -2263,7 +2277,6 @@
     function renderSessionPath(sessions) {
       if (!routeLayerGroup) return;
       routeLayerGroup.clearLayers();
-      const color = currentPlayerColor;
 
       sessions.forEach(session => {
         session.events.forEach(ev => {
@@ -2281,16 +2294,7 @@
             const latlngs = [pts[i]];
             let j = i;
             while (j + 1 < pts.length && runs[j] === state) { latlngs.push(pts[j + 1]); j++; }
-            const running = state === 1;
-            const unknown = state === null || state === undefined;
-            L.polyline(latlngs, {
-              color,
-              weight: running ? 3.5 : 2.5,
-              opacity: unknown ? 0.75 : (running ? 0.95 : 0.45),
-              dashArray: boat ? "6 6" : null,
-              lineJoin: "round",
-              lineCap: "round"
-            }).addTo(routeLayerGroup);
+            L.polyline(latlngs, legStyle(state, boat)).addTo(routeLayerGroup);
             i = j;
           }
         });
@@ -2726,7 +2730,16 @@
       const cues = [];
       let hasHp = false;
       events.forEach(ev => {
-        if (ev.ty === "xp" && ev.xp) {
+        if (ev.ty === "xp" && Array.isArray(ev.d) && Array.isArray(ev.sk)) {
+          // 1.2 format: one cue per drop, at the second it landed.
+          for (let i = 0; i + 2 < ev.d.length; i += 3) {
+            const skill = ev.sk[ev.d[i + 1]];
+            if (!skill) continue;
+            const gains = {}; gains[skill] = ev.d[i + 2];
+            cues.push({ ms: realToPlaybackMs(ev.s + ev.d[i]), type: "xp", gains });
+          }
+        } else if (ev.ty === "xp" && ev.xp) {
+          // 1.1 format: per-skill totals stamped at save time.
           cues.push({ ms: realToPlaybackMs(ev.s), type: "xp", gains: ev.xp });
         } else if (ev.ty === "hp" && Array.isArray(ev.hp)) {
           hasHp = true;
@@ -2735,7 +2748,8 @@
           }
         }
       });
-      cues.sort((a, b) => a.ms - b.ms);
+      cues.forEach((c, i) => { c.order = i; });
+      cues.sort((a, b) => (a.ms - b.ms) || (a.order - b.order));
 
       const hudState = { hp: 0, hpMax: 0, hasHp, xp: {} };
       let cueIdx = 0;
@@ -2828,6 +2842,43 @@
         }
       }
 
+      // ---- Trail: only the part of the route already travelled is drawn ----
+      // Completed walk legs are appended as playback advances; scrubbing
+      // backwards or switching plane rebuilds from scratch. The leg in
+      // progress is a separate line that follows the marker.
+      let trailUpTo = 0;
+      let trailPlane = currentPlane;
+      const currentLegLine = L.polyline([], legStyle(null, false)).addTo(routeLayerGroup);
+      function trailAppend(toIdx) {
+        for (let i = trailUpTo; i < toIdx; i++) {
+          const sg = segments[i];
+          if (sg.isWalk && sg.plane === currentPlane) {
+            L.polyline([sg.from, sg.to], legStyle(sg.run, sg.boat)).addTo(routeLayerGroup);
+          }
+        }
+        trailUpTo = Math.max(trailUpTo, toIdx);
+      }
+      function trailRebuild(toIdx) {
+        routeLayerGroup.clearLayers();
+        currentLegLine.setLatLngs([]);
+        currentLegLine.addTo(routeLayerGroup);
+        trailUpTo = 0;
+        trailPlane = currentPlane;
+        trailAppend(toIdx);
+      }
+      function updateTrail(idx, seg, latlng) {
+        if (idx < trailUpTo || trailPlane !== currentPlane) trailRebuild(idx);
+        else trailAppend(idx);
+        if (seg.isWalk && seg.plane === currentPlane) {
+          currentLegLine.setStyle(legStyle(seg.run, seg.boat));
+          currentLegLine.setLatLngs([seg.from, latlng]);
+        } else {
+          currentLegLine.setLatLngs([]);
+        }
+      }
+      routeLayerGroup.clearLayers();
+      currentLegLine.addTo(routeLayerGroup);
+
       function seekTo(frac, snapCamera) {
         frac = Math.min(1, Math.max(0, frac));
         const idx = findSegmentIndex(segments, frac);
@@ -2846,6 +2897,7 @@
 
         playbackMarker.setLatLng(latlng);
         playbackHalo.setLatLng(latlng);
+        updateTrail(idx, seg, latlng);
 
         const shouldSnap = snapCamera || seg.snap;
         if (shouldSnap) {
@@ -2872,7 +2924,12 @@
         PLAYBACK_MS, seekTo, segments, cues, elapsedMs: 0, paused: true,
         lastAnnouncedSegIndex: -1, flashing: false,
         fireCuesUpTo, syncCuesTo, onComplete,
-        resetCues: () => { announcedComplete = false; syncCuesTo(0); }
+        resetCues: () => { announcedComplete = false; syncCuesTo(0); },
+        redrawTrail: () => {
+          const idx = findSegmentIndex(segments, activePlayback.elapsedMs / PLAYBACK_MS);
+          trailRebuild(idx);
+          updateTrail(idx, segments[idx], playbackMarker.getLatLng());
+        }
       };
       seekTo(0, true);
       activePlayback.lastAnnouncedSegIndex = findSegmentIndex(segments, 0);
@@ -2947,7 +3004,6 @@
       const idx = sessionSelect ? parseInt(sessionSelect.value, 10) : 0;
       const session = currentSessions[isNaN(idx) ? 0 : idx];
       if (!session) return;
-      renderSessionPath([session]);
       loadSessionForPlayback(session);
     }
 
@@ -2990,7 +3046,6 @@
         sessionSelect.addEventListener("change", () => {
           const idx = parseInt(sessionSelect.value, 10);
           if (!isNaN(idx) && currentSessions[idx]) {
-            renderSessionPath([currentSessions[idx]]);
             loadSessionForPlayback(currentSessions[idx]);
           }
         });
