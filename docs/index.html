@@ -275,6 +275,54 @@
   @media (max-width: 1100px) {
     .board { grid-template-columns: 1fr; max-width: 600px; }
   }
+
+  /* ---- Map tab controls ---- */
+  .map-shell { position: fixed; inset: 0; z-index: 1000; background: #000; }
+  .map-btn { padding: 6px 14px; flex-shrink: 0; }
+  .map-plane {
+    position: absolute; top: 10px; left: 70px; z-index: 1001;
+    display: flex; gap: 4px; background: var(--panel); padding: 6px;
+    border-radius: 6px; border: 1px solid var(--panel-border);
+  }
+  .map-top-right {
+    position: absolute; top: 10px; right: 10px; z-index: 1001;
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
+    max-width: calc(100% - 20px);
+  }
+  .map-bottom {
+    position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 1001;
+    display: flex; gap: 8px; align-items: center;
+    background: var(--panel); padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .map-bottom-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .map-selects { flex: 0 0 auto; }
+  .map-playback { flex: 1 1 auto; }
+  .map-select {
+    background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 5px 8px; font-family: inherit; font-size: 0.8rem;
+    flex-shrink: 0; max-width: 100%;
+  }
+  #sessionScrubber { flex: 1 1 auto; min-width: 0; }
+  #sessionStatus {
+    color: var(--text-faint); font-size: 0.72rem; min-width: 100px; text-align: right;
+    font-variant-numeric: tabular-nums; flex-shrink: 0;
+  }
+
+  /* Phones: stack the bar into two rows, let the selects share the width,
+     and shrink the top buttons so they fit beside the plane control. */
+  @media (max-width: 720px) {
+    .map-bottom { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px; }
+    .map-selects { display: flex; width: 100%; }
+    .map-select { flex: 1 1 0; min-width: 0; font-size: 0.75rem; padding: 6px 4px; }
+    .map-playback { width: 100%; }
+    #sessionStatus { min-width: 70px; font-size: 0.68rem; }
+    .map-plane { left: 56px; padding: 4px; gap: 3px; }
+    .map-top-right { gap: 4px; }
+    .map-btn { padding: 5px 9px; font-size: 0.75rem; }
+    .leaflet-control-zoom { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -306,18 +354,25 @@
   </div>
 
   <div class="tab-panel" id="panel-map">
-    <div style="position:fixed; inset:0; z-index:1000; background:#000;">
-      <button id="mapCloseBtn" class="tab-btn" style="position:absolute; top:10px; right:10px; z-index:1001; padding:6px 14px;">Close ✕</button>
-      <button id="heatmapToggleBtn" class="tab-btn" style="position:absolute; top:10px; right:110px; z-index:1001; padding:6px 14px;">🔥 Heatmap</button>
-      <button id="fogToggleBtn" class="tab-btn" style="position:absolute; top:10px; right:220px; z-index:1001; padding:6px 14px;">🌫️ Fog</button>
-      <div id="planeControl" style="position:absolute; top:10px; left:70px; z-index:1001; display:flex; gap:4px; background:var(--panel); padding:6px; border-radius:6px; border:1px solid var(--panel-border);"></div>
-      <div style="position:absolute; bottom:10px; left:10px; right:10px; z-index:1001; display:flex; gap:8px; align-items:center; background:var(--panel); padding:8px 10px; border-radius:6px; border:1px solid var(--panel-border);">
-        <select id="playerSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
-        <select id="monthSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
-        <select id="sessionSelect" style="background:var(--cell); color:var(--text); border:1px solid var(--panel-border); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:0.8rem; flex-shrink:0;"></select>
-        <button id="sessionPlayBtn" class="tab-btn" style="padding:6px 14px; flex-shrink:0;">▶</button>
-        <input id="sessionScrubber" type="range" min="0" max="1000" value="0" style="flex:1 1 auto; min-width:0;" />
-        <span id="sessionStatus" style="color:var(--text-faint); font-size:0.72rem; min-width:100px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0;"></span>
+    <div class="map-shell">
+      <div id="planeControl" class="map-plane"></div>
+      <div class="map-top-right">
+        <button id="overlayAllBtn" class="tab-btn map-btn" title="Combine all three accounts in heatmap and fog">👥 All</button>
+        <button id="fogToggleBtn" class="tab-btn map-btn">🌫️ Fog</button>
+        <button id="heatmapToggleBtn" class="tab-btn map-btn">🔥 Heatmap</button>
+        <button id="mapCloseBtn" class="tab-btn map-btn">Close ✕</button>
+      </div>
+      <div class="map-bottom">
+        <div class="map-bottom-row map-selects">
+          <select id="playerSelect" class="map-select"></select>
+          <select id="monthSelect" class="map-select"></select>
+          <select id="sessionSelect" class="map-select"></select>
+        </div>
+        <div class="map-bottom-row map-playback">
+          <button id="sessionPlayBtn" class="tab-btn map-btn">▶</button>
+          <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
+          <span id="sessionStatus"></span>
+        </div>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
       <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none; transition:opacity 150ms ease;"></canvas>
@@ -348,6 +403,11 @@
     ];
     const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
     const fmt = n => n.toLocaleString();
+    // Escapes text that comes from the hiscores (activity/skill names) before
+    // it goes into an innerHTML template, so a name containing < or & can
+    // never break the page.
+    const esc = v => String(v).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     function timeAgo(iso) {
       const diff = Date.now() - new Date(iso).getTime();
       const m = Math.round(diff / 60000);
@@ -570,7 +630,7 @@
               const label = tname.replace("Clue Scrolls (", "").replace(")", "");
               const srow = document.createElement("div");
               srow.className = "kc-row kc-sub-row";
-              srow.innerHTML = '<span class="kc-name">' + label + '</span>' +
+              srow.innerHTML = '<span class="kc-name">' + esc(label) + '</span>' +
                 '<span class="kc-score">' + fmt(tdata.score) + '</span>';
               sub.appendChild(srow);
             });
@@ -596,7 +656,7 @@
           const row = document.createElement("div");
           row.className = "kc-row kc-cat-head expandable";
           row.innerHTML =
-            '<span class="kc-name"><span class="kc-caret">▸</span> ' + catName +
+            '<span class="kc-name"><span class="kc-caret">▸</span> ' + esc(catName) +
             ' <span class="kc-cat-count">(' + entries.length + ')</span></span>' +
             '<span class="kc-score">' + fmt(catTotal) + '</span>';
           wrap.appendChild(row);
@@ -606,7 +666,7 @@
           entries.forEach(([name, d]) => {
             const srow = document.createElement("div");
             srow.className = "kc-row kc-sub-row";
-            srow.innerHTML = '<span class="kc-name">' + name + '</span>' +
+            srow.innerHTML = '<span class="kc-name">' + esc(name) + '</span>' +
               '<span class="kc-score">' + fmt(d.score) + '</span>';
             sub.appendChild(srow);
           });
@@ -625,7 +685,7 @@
           .forEach(([name, data]) => {
             const row = document.createElement("div");
             row.className = "kc-row";
-            row.innerHTML = '<span class="kc-name">' + name + '</span>' +
+            row.innerHTML = '<span class="kc-name">' + esc(name) + '</span>' +
               '<span class="kc-score">' + fmt(data.score) + '</span>';
             kcList.appendChild(row);
           });
@@ -1337,31 +1397,62 @@
 
     const MONTH_PROBE_COUNT = 24;
 
+    // Route data is cached in memory for the life of the page. The month
+    // list and every month's sessions are fetched at most once per player,
+    // so switching player/month, and building heatmap or fog, never
+    // re-downloads anything already seen. Only the current month can gain
+    // new data while the page is open, so only that one bypasses the
+    // browser cache; past months are immutable and cache normally.
+    const monthsCache = {};   // hash -> [yyyy-mm, ...]
+    const sessionsCache = {}; // hash + "|" + yyyy-mm -> [sessions]
+
+    function routeFetchOptions(yearMonth, extra) {
+      const isCurrent = yearMonth === currentYearMonth();
+      return Object.assign({}, extra || {}, isCurrent ? { cache: "no-store" } : {});
+    }
+    function routeUrl(hash, yearMonth) {
+      const base = "route-data/" + hash + "-" + yearMonth + ".json";
+      return yearMonth === currentYearMonth() ? base + "?t=" + Date.now() : base;
+    }
+
     async function fetchAvailableMonths(hash) {
+      if (monthsCache[hash]) return monthsCache[hash];
       const candidates = monthsBack(MONTH_PROBE_COUNT);
       const checks = await Promise.all(candidates.map(async (ym) => {
         try {
-          const res = await fetch("route-data/" + hash + "-" + ym + ".json?t=" + Date.now(),
-            { method: "HEAD", cache: "no-store" });
+          const res = await fetch(routeUrl(hash, ym), routeFetchOptions(ym, { method: "HEAD" }));
           return res.ok ? ym : null;
         } catch {
           return null;
         }
       }));
-      return checks.filter(Boolean);
+      monthsCache[hash] = checks.filter(Boolean);
+      return monthsCache[hash];
     }
 
     async function fetchPlayerSessions(hash, yearMonth) {
+      const key = hash + "|" + yearMonth;
+      if (sessionsCache[key]) return sessionsCache[key];
+      let sessions = [];
       try {
-        const path = "route-data/" + hash + "-" + yearMonth + ".json";
-        const res = await fetch(path + "?t=" + Date.now(), { cache: "no-store" });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data) ? data : [];
+        const res = await fetch(routeUrl(hash, yearMonth), routeFetchOptions(yearMonth));
+        if (res.ok) {
+          const data = await res.json();
+          sessions = Array.isArray(data) ? data : [];
+        }
       } catch (err) {
         console.error("Route data fetch error:", err);
-        return [];
       }
+      sessionsCache[key] = sessions;
+      return sessions;
+    }
+
+    // Every session across every available month for a player, in month
+    // order. Backs the heatmap and fog so both share one download.
+    async function fetchAllPlayerSessions(hash) {
+      const months = await fetchAvailableMonths(hash);
+      const perMonth = await Promise.all(months.map(ym => fetchPlayerSessions(hash, ym)));
+      return perMonth.flat();
     }
 
     function populateMonthSelect(months) {
@@ -1474,7 +1565,7 @@
         maxZoom: MAP_MAX_ZOOM,
         noWrap: true,
         tms: true,
-        keepBuffer: 3
+        keepBuffer: 4
       }).addTo(leafletMap);
 
       planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); updateInstanceBanner(); });
@@ -1501,6 +1592,13 @@
 
       const fogBtn = document.getElementById("fogToggleBtn");
       if (fogBtn) fogBtn.addEventListener("click", toggleFog);
+
+      const allBtn = document.getElementById("overlayAllBtn");
+      if (allBtn) allBtn.addEventListener("click", toggleOverlayAll);
+
+      // Keep the fog canvas sized to the map if the window/orientation
+      // changes (Leaflet handles its own tiles on resize).
+      window.addEventListener("resize", () => { if (fogEnabled) redrawFog(); });
       // Redraw the real (punched-holes) fog only once the pan/zoom has
       // actually settled, not on every intermediate frame of Leaflet's own
       // zoom animation - the hole positions are computed from screen pixel
@@ -1528,6 +1626,14 @@
     let heatmapEnabled = false;
     const heatmapPointsByHash = {}; // hash -> { plane: [[lat,lng,intensity], ...] }
 
+    // When on, heatmap and fog combine every tracked account rather than
+    // just the selected one.
+    let overlayAllPlayers = false;
+    function overlayHashes() {
+      if (overlayAllPlayers) return ROUTE_PLAYERS.map(p => p.hash);
+      return currentPlayerHash ? [currentPlayerHash] : [];
+    }
+
     // Fetches every available month for this player and buckets every
     // recorded position by plane. Walk waypoints are weighted lower per
     // point than teleport destinations (0.5 vs 1) since a single long walk
@@ -1535,10 +1641,9 @@
     // that's just passed through once from looking as "hot" as a spot
     // that's genuinely been a real destination many times.
     async function buildHeatmapPoints(hash) {
-      const months = await fetchAvailableMonths(hash);
+      const sessions = await fetchAllPlayerSessions(hash);
       const byPlane = {};
-      for (const ym of months) {
-        const sessions = await fetchPlayerSessions(hash, ym);
+      {
         sessions.forEach(session => {
           (session.events || []).forEach(ev => {
             if (ev.ty === "bank" || !ev.f || !ev.t) return;
@@ -1568,12 +1673,13 @@
         if (heatmapLayer) { leafletMap.removeLayer(heatmapLayer); heatmapLayer = null; }
         return;
       }
-      if (!currentPlayerHash) return;
-      if (!heatmapPointsByHash[currentPlayerHash]) {
-        heatmapPointsByHash[currentPlayerHash] = await buildHeatmapPoints(currentPlayerHash);
-      }
-      const points = (heatmapPointsByHash[currentPlayerHash] &&
-        heatmapPointsByHash[currentPlayerHash][currentPlane]) || [];
+      const hashes = overlayHashes();
+      if (!hashes.length) return;
+      await Promise.all(hashes.map(async h => {
+        if (!heatmapPointsByHash[h]) heatmapPointsByHash[h] = await buildHeatmapPoints(h);
+      }));
+      const points = hashes.flatMap(h =>
+        (heatmapPointsByHash[h] && heatmapPointsByHash[h][currentPlane]) || []);
       if (heatmapLayer) leafletMap.removeLayer(heatmapLayer);
       heatmapLayer = L.heatLayer(points, {
         radius: 18, blur: 22, maxZoom: MAP_MAX_ZOOM, max: 3
@@ -1612,10 +1718,9 @@
     }
 
     async function buildExploredCells(hash) {
-      const months = await fetchAvailableMonths(hash);
+      const sessions = await fetchAllPlayerSessions(hash);
       const byPlane = {};
-      for (const ym of months) {
-        const sessions = await fetchPlayerSessions(hash, ym);
+      {
         sessions.forEach(session => {
           (session.events || []).forEach(ev => {
             if (ev.ty === "bank" || !ev.f || !ev.t) return;
@@ -1681,9 +1786,13 @@
       ctx.fillStyle = FOG_COLOR;
       ctx.fillRect(0, 0, w, h);
 
-      const cells = (exploredCellsByHash[currentPlayerHash] &&
-        exploredCellsByHash[currentPlayerHash][currentPlane]) || null;
-      if (!cells || !cells.size) return;
+      // Union of every overlaid player's explored cells on this plane.
+      const cellSets = overlayHashes()
+        .map(h => exploredCellsByHash[h] && exploredCellsByHash[h][currentPlane])
+        .filter(Boolean);
+      if (!cellSets.length) return;
+      const cells = cellSets.length === 1 ? cellSets[0] : new Set(cellSets.flatMap(st => [...st]));
+      if (!cells.size) return;
 
       // Cell size in screen pixels at the current zoom - this map uses a
       // flat linear projection (see the coordinate-system notes above), so
@@ -1727,10 +1836,22 @@
         return;
       }
       if (canvas) canvas.style.display = "block";
-      if (currentPlayerHash && !exploredCellsByHash[currentPlayerHash]) {
-        exploredCellsByHash[currentPlayerHash] = await buildExploredCells(currentPlayerHash);
-      }
+      await ensureFogData();
       redrawFog();
+    }
+
+    async function ensureFogData() {
+      await Promise.all(overlayHashes().map(async h => {
+        if (!exploredCellsByHash[h]) exploredCellsByHash[h] = await buildExploredCells(h);
+      }));
+    }
+
+    async function toggleOverlayAll() {
+      overlayAllPlayers = !overlayAllPlayers;
+      const btn = document.getElementById("overlayAllBtn");
+      if (btn) btn.classList.toggle("active", overlayAllPlayers);
+      if (heatmapEnabled) await refreshHeatmapLayer();
+      if (fogEnabled) { await ensureFogData(); redrawFog(); }
     }
 
     function switchPlane(plane) {
@@ -2135,12 +2256,7 @@
             await loadAndRenderPlayer(p.hash);
             loadSelectedSession();
             if (heatmapEnabled) await refreshHeatmapLayer();
-            if (fogEnabled) {
-              if (currentPlayerHash && !exploredCellsByHash[currentPlayerHash]) {
-                exploredCellsByHash[currentPlayerHash] = await buildExploredCells(currentPlayerHash);
-              }
-              redrawFog();
-            }
+            if (fogEnabled) { await ensureFogData(); redrawFog(); }
           }
         });
       }
