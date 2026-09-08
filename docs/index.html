@@ -1259,7 +1259,19 @@
           btn.addEventListener("mouseenter", () => {
             if (leafletMap) return;
             initLeafletMap();
-            preloadTilesAround(gameToLatLng(3221.5, 3217), 6, 2, "low", 0);
+            // Opening the tab loads the selected session and snaps to its
+            // first point at FOLLOW_ZOOM, so warm the tiles there rather
+            // than at a fixed spot; Lumbridge only if nothing is loaded.
+            const sel = document.getElementById("sessionSelect");
+            const idx = sel ? parseInt(sel.value, 10) : NaN;
+            const session = currentSessions[isNaN(idx) ? 0 : idx];
+            const first = session && (session.events || []).find(ev => ev.f || ev.t);
+            if (first) {
+              const pt = first.f || first.t;
+              preloadTilesAround(gameToLatLng(pt[0], pt[1]), 8, 2, "low", pt[2] || 0);
+            } else {
+              preloadTilesAround(gameToLatLng(3221.5, 3217), 6, 2, "low", 0);
+            }
           }, { once: true });
         }
       });
