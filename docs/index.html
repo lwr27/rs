@@ -357,6 +357,7 @@
     <div class="map-shell">
       <div id="planeControl" class="map-plane"></div>
       <div class="map-top-right">
+        <button id="overlayRangeBtn" class="tab-btn map-btn" title="Time window for heatmap and fog">All time</button>
         <button id="overlayAllBtn" class="tab-btn map-btn" title="Combine all three accounts in heatmap and fog">👥 All</button>
         <button id="fogToggleBtn" class="tab-btn map-btn">🌫️ Fog</button>
         <button id="heatmapToggleBtn" class="tab-btn map-btn">🔥 Heatmap</button>
@@ -1252,6 +1253,15 @@
           document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
           if (btn.dataset.tab === "map") activateMapPanel();
         });
+        // Warm the map up on hover so the first click doesn't start from
+        // a blank screen: create Leaflet and queue the starting tiles.
+        if (btn.dataset.tab === "map") {
+          btn.addEventListener("mouseenter", () => {
+            if (leafletMap) return;
+            initLeafletMap();
+            preloadTilesAround(gameToLatLng(3221.5, 3217), 6, 2, "low", 0);
+          }, { once: true });
+        }
       });
     }
 
@@ -1478,6 +1488,23 @@
       });
     }
 
+    // Tiles walked in a session, from the recorded walk paths (teleports
+    // don't count). Used in the session dropdown label.
+    function sessionDistanceTiles(session) {
+      let total = 0;
+      (session.events || []).forEach(ev => {
+        if (ev.ty !== "walk" || !ev.f || !ev.t) return;
+        const pts = eventGameCoords(ev);
+        for (let i = 0; i + 1 < pts.length; i++) {
+          total += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+        }
+      });
+      return Math.round(total);
+    }
+    function formatTiles(n) {
+      return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+    }
+
     function populateSessionSelect(sessions) {
       const select = document.getElementById("sessionSelect");
       if (!select) return;
@@ -1494,9 +1521,10 @@
         opt.value = i;
         const startDate = new Date(session.start * 1000);
         const durationMin = Math.round((session.end - session.start) / 60);
+        const tiles = sessionDistanceTiles(session);
         opt.textContent = startDate.toLocaleString(undefined, {
           month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-        }) + " (" + durationMin + "m)";
+        }) + " (" + durationMin + "m" + (tiles ? ", " + formatTiles(tiles) + " tiles" : "") + ")";
         select.appendChild(opt);
       });
     }
@@ -1617,6 +1645,9 @@
       const allBtn = document.getElementById("overlayAllBtn");
       if (allBtn) allBtn.addEventListener("click", toggleOverlayAll);
 
+      const rangeBtn = document.getElementById("overlayRangeBtn");
+      if (rangeBtn) rangeBtn.addEventListener("click", cycleOverlayRange);
+
       // Keep the fog canvas sized to the map if the window/orientation
       // changes (Leaflet handles its own tiles on resize).
       window.addEventListener("resize", () => { if (fogEnabled) redrawFog(); });
@@ -1653,6 +1684,36 @@
     // When on, heatmap and fog combine every tracked account rather than
     // just the selected one.
     let overlayAllPlayers = false;
+
+    // Time window for heatmap and fog: 0 = all time, else last N days.
+    // Overlay caches are keyed by player AND window so switching back
+    // and forth doesn't rebuild.
+    const OVERLAY_RANGES = [
+      { days: 0, label: "All time" },
+      { days: 90, label: "Last 90d" },
+      { days: 30, label: "Last 30d" },
+      { days: 7, label: "Last 7d" }
+    ];
+    let overlayRangeIdx = 0;
+    function overlayRangeDays() { return OVERLAY_RANGES[overlayRangeIdx].days; }
+    function overlayCacheKey(hash) { return hash + "|" + overlayRangeDays(); }
+    function sessionsInOverlayRange(sessions) {
+      const days = overlayRangeDays();
+      if (!days) return sessions;
+      const cutoff = Date.now() / 1000 - days * 86400;
+      return sessions.filter(s => (s.end || s.start) >= cutoff);
+    }
+    async function cycleOverlayRange() {
+      overlayRangeIdx = (overlayRangeIdx + 1) % OVERLAY_RANGES.length;
+      const btn = document.getElementById("overlayRangeBtn");
+      if (btn) {
+        btn.textContent = OVERLAY_RANGES[overlayRangeIdx].label;
+        btn.classList.toggle("active", overlayRangeDays() !== 0);
+      }
+      if (heatmapEnabled) await refreshHeatmapLayer();
+      if (fogEnabled) { await ensureFogData(); redrawFog(); }
+    }
+
     function overlayHashes() {
       if (overlayAllPlayers) return ROUTE_PLAYERS.map(p => p.hash);
       return currentPlayerHash ? [currentPlayerHash] : [];
@@ -1702,7 +1763,7 @@
     const HEAT_WALK_STEP_TILES = 2;
 
     async function buildHeatmapPoints(hash) {
-      const sessions = await fetchAllPlayerSessions(hash);
+      const sessions = sessionsInOverlayRange(await fetchAllPlayerSessions(hash));
       const cellsByPlane = {}; // plane -> Map("gx,gy" -> summed weight)
       const bump = (plane, x, y, w) => {
         if (!cellsByPlane[plane]) cellsByPlane[plane] = new Map();
@@ -1743,10 +1804,13 @@
       const hashes = overlayHashes();
       if (!hashes.length) return;
       await Promise.all(hashes.map(async h => {
-        if (!heatmapPointsByHash[h]) heatmapPointsByHash[h] = await buildHeatmapPoints(h);
+        const k = overlayCacheKey(h);
+        if (!heatmapPointsByHash[k]) heatmapPointsByHash[k] = await buildHeatmapPoints(h);
       }));
-      const points = hashes.flatMap(h =>
-        (heatmapPointsByHash[h] && heatmapPointsByHash[h][currentPlane]) || []);
+      const points = hashes.flatMap(h => {
+        const built = heatmapPointsByHash[overlayCacheKey(h)];
+        return (built && built[currentPlane]) || [];
+      });
       if (heatmapLayer) leafletMap.removeLayer(heatmapLayer);
       heatmapLayer = L.heatLayer(points, {
         radius: 18, blur: 22, maxZoom: MAP_MAX_ZOOM, max: 4
@@ -1785,7 +1849,7 @@
     }
 
     async function buildExploredCells(hash) {
-      const sessions = await fetchAllPlayerSessions(hash);
+      const sessions = sessionsInOverlayRange(await fetchAllPlayerSessions(hash));
       const byPlane = {};
       await forEachEventChunked(sessions, ev => {
         if (ev.ty === "bank" || !ev.f || !ev.t) return;
@@ -1847,7 +1911,8 @@
 
       // Union of every overlaid player's explored cells on this plane.
       const cellSets = overlayHashes()
-        .map(h => exploredCellsByHash[h] && exploredCellsByHash[h][currentPlane])
+        .map(h => exploredCellsByHash[overlayCacheKey(h)])
+        .map(built => built && built[currentPlane])
         .filter(Boolean);
       if (!cellSets.length) return;
       const cells = cellSets.length === 1 ? cellSets[0] : new Set(cellSets.flatMap(st => [...st]));
@@ -1940,7 +2005,8 @@
 
     async function ensureFogData() {
       await Promise.all(overlayHashes().map(async h => {
-        if (!exploredCellsByHash[h]) exploredCellsByHash[h] = await buildExploredCells(h);
+        const k = overlayCacheKey(h);
+        if (!exploredCellsByHash[k]) exploredCellsByHash[k] = await buildExploredCells(h);
       }));
     }
 
