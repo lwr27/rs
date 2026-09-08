@@ -12,7 +12,7 @@
 const TILE_CACHE = "rs-map-tiles-v2";
 const MAX_TILES = 4000;
 const TRIM_EVERY = 50;
-const TILE_HOSTS = ["lwr27.github.io", "map.3kt.live"];
+const TILE_HOSTS = ["map.3kt.live", "lwr27.github.io"];
 
 let putsSinceTrim = 0;
 
@@ -46,7 +46,10 @@ self.addEventListener("fetch", (event) => {
     const hit = await cache.match(key);
     if (hit) return hit;
 
-    const response = await fetch(event.request);
+    // Fetch by plain URL with an explicit no-cors request rather than
+    // re-using the page's Request object: the latter fails in Chrome
+    // when the tile host redirects across origins.
+    const response = await fetch(key, { mode: "no-cors", credentials: "omit" });
     // Tiles arrive as plain (no-cors) image requests, which means their
     // status code is hidden from us ("opaque"). Those are cached too;
     // the page drops any entry whose image fails to decode (see

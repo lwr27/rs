@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>OSRS XP Tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="preconnect" href="https://lwr27.github.io" />
+<link rel="preconnect" href="https://map.3kt.live" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="leaflet-heat.js"></script>
@@ -1304,7 +1304,9 @@
     let planeTileLayer = null;
     let routeLayerGroup = null;
 
-    const TILE_URL_BASE = "https://lwr27.github.io/rs-map-tiles/tiles/";
+    // The tile repo's custom domain. Using it directly avoids a 301
+    // redirect on every single tile that the github.io URL incurs.
+    const TILE_URL_BASE = "https://map.3kt.live/tiles/";
     function tileUrlTemplate(plane) {
       return TILE_URL_BASE + plane + "/{z}/{x}/{y}.png";
     }
