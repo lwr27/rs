@@ -311,6 +311,64 @@
     font-variant-numeric: tabular-nums; flex-shrink: 0;
   }
 
+  /* Playback effects layer (hitsplats, xp drops, marker hp bar) */
+  #mapFx { position: absolute; inset: 0; z-index: 998; pointer-events: none; overflow: hidden; }
+  .fx-xp {
+    position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+    font-weight: 700; font-size: 0.82rem; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.8);
+    animation: fx-rise 1.6s ease-out forwards;
+  }
+  .fx-xp .fx-skill { opacity: 0.85; font-weight: 600; margin-left: 4px; }
+  @keyframes fx-rise {
+    0%   { opacity: 0; margin-top: 0; }
+    12%  { opacity: 1; }
+    100% { opacity: 0; margin-top: -46px; }
+  }
+  .fx-split {
+    position: absolute; transform: translate(-50%, -50%);
+    min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.78rem; color: #fff; border-radius: 4px;
+    text-shadow: 0 1px 1px #000;
+    animation: fx-split 1.1s ease-out forwards;
+  }
+  .fx-split.dmg { background: #c0392b; box-shadow: 0 0 0 1px #7b1c14 inset; }
+  .fx-split.heal { background: #27ae60; box-shadow: 0 0 0 1px #17693a inset; }
+  .fx-split.zero { background: #2f6fd8; box-shadow: 0 0 0 1px #1c4790 inset; }
+  @keyframes fx-split {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+    15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    30%  { transform: translate(-50%, -50%) scale(1); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -80%) scale(1); }
+  }
+  .fx-hpbar {
+    position: absolute; transform: translate(-50%, 0); width: 34px; height: 5px;
+    background: #7b1c14; border: 1px solid #000; box-sizing: content-box;
+    transition: opacity 300ms ease;
+  }
+  .fx-hpbar > div { height: 100%; background: #2ecc71; transition: width 200ms ease; }
+
+  /* Session HUD */
+  #sessionHud {
+    position: absolute; top: 60px; left: 10px; z-index: 1001; min-width: 168px; max-width: 220px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 8px 10px; font-size: 0.74rem; color: var(--text-dim);
+  }
+  .hud-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  #hudPhase { font-weight: 500; color: var(--text-faint); }
+  .hud-row { display: flex; align-items: center; gap: 8px; }
+  .hud-hpbar { flex: 1 1 auto; height: 8px; background: #7b1c14; border-radius: 3px; overflow: hidden; }
+  .hud-hpfill { height: 100%; width: 100%; background: #2ecc71; transition: width 250ms ease, background 250ms ease; }
+  .hud-hpnum { font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; color: var(--text); }
+  .hud-xp { margin-top: 6px; }
+  .hud-xptotal { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hud-skills { margin-top: 3px; display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; font-variant-numeric: tabular-nums; }
+  .hud-skills .sk { color: var(--text-dim); }
+  .hud-skills .sv { text-align: right; color: var(--text); }
+  .hud-complete { animation: hud-pop 400ms ease; }
+  @keyframes hud-pop { 0% { transform: scale(0.97); } 60% { transform: scale(1.02); } 100% { transform: scale(1); } }
+
   /* Phones: stack the bar into two rows, let the selects share the width,
      and shrink the top buttons so they fit beside the plane control. */
   @media (max-width: 720px) {
@@ -323,6 +381,7 @@
     .map-top-right { gap: 4px; }
     .map-btn { padding: 5px 9px; font-size: 0.75rem; }
     .leaflet-control-zoom { display: none; }
+    #sessionHud { top: 52px; left: 6px; min-width: 140px; max-width: 170px; font-size: 0.68rem; padding: 6px 8px; }
   }
 </style>
 </head>
@@ -378,6 +437,18 @@
         </div>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
+      <div id="mapFx"></div>
+      <div id="sessionHud" style="display:none;">
+        <div class="hud-title"><span id="hudPlayer"></span><span id="hudPhase"></span></div>
+        <div class="hud-row hud-hp" id="hudHpRow">
+          <div class="hud-hpbar"><div class="hud-hpfill" id="hudHpFill"></div></div>
+          <span class="hud-hpnum" id="hudHpNum"></span>
+        </div>
+        <div class="hud-xp" id="hudXpRow">
+          <div class="hud-xptotal"><span id="hudXpTotal">0</span> xp</div>
+          <div class="hud-skills" id="hudSkills"></div>
+        </div>
+      </div>
       <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none; will-change:transform;"></canvas>
       <div id="instanceBanner" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1002; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:10px 16px; color:var(--text-dim); font-size:0.85rem; text-align:center; max-width:320px;">No map imagery here — likely inside a player-owned house or other instance</div>
     </div>
@@ -1755,7 +1826,9 @@
       // until the redraw), rather than a stale, misaligned set of holes.
       leafletMap.on("move", () => {
         if (fogEnabled) trackFogToView(leafletMap.getCenter(), leafletMap.getZoom());
+        positionFxHpBar();
       });
+      leafletMap.on("zoomend", positionFxHpBar);
       leafletMap.on("zoomanim", (e) => {
         if (fogEnabled) trackFogToView(e.center, e.zoom);
       });
@@ -2169,26 +2242,57 @@
       return pts;
     }
 
+    // Run state for each leg of a walk event, aligned with the leg list
+    // from eventLatLngs (leg i runs from point i to point i+1). r holds
+    // one entry per point (state on arrival), rAll a single value for the
+    // whole segment, and old data has neither.
+    function walkLegRunStates(ev) {
+      const pointCount = 2 + (Array.isArray(ev.w) ? ev.w.length / 2 : 0);
+      const legs = pointCount - 1;
+      if (Array.isArray(ev.r) && ev.r.length === pointCount) {
+        return ev.r.slice(1); // arrival state at the end of each leg
+      }
+      const single = typeof ev.rAll === "number" ? ev.rAll : null;
+      return new Array(legs).fill(single);
+    }
+
+    // The drawn route uses the player's own colour, muted while walking
+    // and vivid while running, so the two states are distinguishable
+    // without a second hue that would clash with other players' colours.
+    // Boat travel is dashed.
     function renderSessionPath(sessions) {
       if (!routeLayerGroup) return;
       routeLayerGroup.clearLayers();
-
-      const WALK_COLOR = "#4f8ef0";
+      const color = currentPlayerColor;
 
       sessions.forEach(session => {
         session.events.forEach(ev => {
-          if (ev.ty === "bank" || !ev.f || !ev.t) return;
+          if (ev.ty !== "walk" || !ev.f || !ev.t) return;
           if (ev.f[2] !== currentPlane) return;
-          if (ev.ty !== "walk") return;
-          const latlngs = eventLatLngs(ev);
+          const pts = eventLatLngs(ev);
+          const runs = walkLegRunStates(ev);
+          const boat = ev.b === 1;
 
-          L.polyline(latlngs, {
-            color: WALK_COLOR,
-            weight: 3,
-            opacity: 0.9,
-            lineJoin: "round",
-            lineCap: "round"
-          }).addTo(routeLayerGroup);
+          // Merge consecutive legs with the same state into one polyline
+          // so a long run isn't hundreds of tiny layers.
+          let i = 0;
+          while (i + 1 < pts.length) {
+            const state = runs[i];
+            const latlngs = [pts[i]];
+            let j = i;
+            while (j + 1 < pts.length && runs[j] === state) { latlngs.push(pts[j + 1]); j++; }
+            const running = state === 1;
+            const unknown = state === null || state === undefined;
+            L.polyline(latlngs, {
+              color,
+              weight: running ? 3.5 : 2.5,
+              opacity: unknown ? 0.75 : (running ? 0.95 : 0.45),
+              dashArray: boat ? "6 6" : null,
+              lineJoin: "round",
+              lineCap: "round"
+            }).addTo(routeLayerGroup);
+            i = j;
+          }
         });
       });
     }
@@ -2276,7 +2380,7 @@
           const enteringNewTeleport =
             idx !== activePlayback.lastAnnouncedSegIndex &&
             activePlayback.lastAnnouncedSegIndex !== -1 &&
-            !activePlayback.segments[idx].isWalk;
+            activePlayback.segments[idx].snap;
 
           if (enteringNewTeleport) {
             activePlayback.elapsedMs = prospectiveMs;
@@ -2289,12 +2393,14 @@
             activePlayback.elapsedMs = prospectiveMs;
             activePlayback.lastAnnouncedSegIndex = idx;
             activePlayback.seekTo(prospectiveFrac, false);
+            activePlayback.fireCuesUpTo(prospectiveMs);
             if (playbackHalo) {
               playbackHalo.setRadius(9 + Math.sin(activePlayback.elapsedMs / 180) * 3);
             }
             if (prospectiveFrac >= 1) {
               activePlayback.paused = true;
               setPlayButtonIcon(true);
+              activePlayback.onComplete();
             }
           }
         }
@@ -2307,11 +2413,143 @@
       if (btn) btn.textContent = showPlay ? "▶" : "⏸";
     }
 
+    // OSRS skill colours (approximate, for xp drops and the HUD).
+    const SKILL_COLORS = {
+      Attack: "#b83b2a", Strength: "#2e9e4f", Defence: "#4a90e2", Ranged: "#3a9d5d",
+      Prayer: "#e8e0b0", Magic: "#3f6be0", Runecrafting: "#c9c1a4", Construction: "#c8a26b",
+      Hitpoints: "#e0534c", Agility: "#3f3fb0", Herblore: "#2f9e5c", Thieving: "#7b4fb0",
+      Crafting: "#a6743a", Fletching: "#3cb8b0", Slayer: "#a04040", Hunter: "#8a7050",
+      Mining: "#6f7b8a", Smithing: "#8f8f8f", Fishing: "#4a8fbd", Cooking: "#8a3ab5",
+      Firemaking: "#e08a2c", Woodcutting: "#7d9a4a", Farming: "#5aab3a", Sailing: "#3a7fbf"
+    };
+    function skillColor(name) { return SKILL_COLORS[name] || "#d0d6de"; }
+
+    // ---- Effects layer helpers ----
+    function fxContainer() { return document.getElementById("mapFx"); }
+    function markerScreenPoint() {
+      if (!leafletMap || !playbackMarker) return null;
+      return leafletMap.latLngToContainerPoint(playbackMarker.getLatLng());
+    }
+    function spawnFx(className, html, dx, dy, ttlMs) {
+      const box = fxContainer();
+      const pt = markerScreenPoint();
+      if (!box || !pt) return;
+      const el = document.createElement("div");
+      el.className = className;
+      el.innerHTML = html;
+      el.style.left = (pt.x + dx) + "px";
+      el.style.top = (pt.y + dy) + "px";
+      box.appendChild(el);
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, ttlMs);
+    }
+    function spawnXpDrop(skill, amount, stackIndex) {
+      spawnFx("fx-xp",
+        '<span style="color:' + skillColor(skill) + '">+' + fmt(amount) + '</span>' +
+        '<span class="fx-skill" style="color:' + skillColor(skill) + '">' + esc(skill) + '</span>',
+        (stackIndex % 2 === 0 ? -1 : 1) * (14 + stackIndex * 6), -14 - stackIndex * 16, 1700);
+    }
+    function spawnHitsplat(delta) {
+      const cls = delta < 0 ? "dmg" : (delta > 0 ? "heal" : "zero");
+      spawnFx("fx-split " + cls, String(Math.abs(delta)), 0, 0, 1200);
+    }
+
+    // ---- Marker HP bar + HUD ----
+    let fxHpBar = null;
+    let hudHideTimer = null;
+    function ensureFxHpBar() {
+      if (fxHpBar) return fxHpBar;
+      const box = fxContainer();
+      if (!box) return null;
+      fxHpBar = document.createElement("div");
+      fxHpBar.className = "fx-hpbar";
+      fxHpBar.style.opacity = "0";
+      fxHpBar.innerHTML = "<div></div>";
+      box.appendChild(fxHpBar);
+      return fxHpBar;
+    }
+    function positionFxHpBar() {
+      if (!fxHpBar) return;
+      const pt = markerScreenPoint();
+      if (!pt) return;
+      fxHpBar.style.left = pt.x + "px";
+      fxHpBar.style.top = (pt.y - 20) + "px";
+    }
+    function hpColor(frac) {
+      // green above 50%, amber to 25%, red below
+      if (frac > 0.5) return "#2ecc71";
+      if (frac > 0.25) return "#f0b429";
+      return "#e74c3c";
+    }
+    function renderHud(state, phase) {
+      const hud = document.getElementById("sessionHud");
+      if (!hud) return;
+      hud.style.display = "block";
+      const player = ROUTE_PLAYERS.find(p => p.hash === currentPlayerHash);
+      const nameEl = document.getElementById("hudPlayer");
+      if (nameEl) {
+        nameEl.textContent = player ? player.name : "";
+        nameEl.style.color = currentPlayerColor;
+      }
+      const phaseEl = document.getElementById("hudPhase");
+      if (phaseEl) phaseEl.textContent = phase || "";
+
+      const hpRow = document.getElementById("hudHpRow");
+      if (hpRow) {
+        if (state.hasHp && state.hpMax > 0) {
+          hpRow.style.display = "flex";
+          const frac = Math.max(0, Math.min(1, state.hp / state.hpMax));
+          const fill = document.getElementById("hudHpFill");
+          if (fill) { fill.style.width = (frac * 100) + "%"; fill.style.background = hpColor(frac); }
+          const num = document.getElementById("hudHpNum");
+          if (num) num.textContent = state.hp + " / " + state.hpMax;
+          const bar = ensureFxHpBar();
+          if (bar) {
+            bar.firstChild.style.width = (frac * 100) + "%";
+            bar.firstChild.style.background = hpColor(frac);
+            bar.style.opacity = state.hp < state.hpMax ? "1" : "0";
+          }
+        } else {
+          hpRow.style.display = "none";
+          if (fxHpBar) fxHpBar.style.opacity = "0";
+        }
+      }
+
+      const xpRow = document.getElementById("hudXpRow");
+      if (xpRow) {
+        const skills = Object.keys(state.xp);
+        if (skills.length) {
+          xpRow.style.display = "block";
+          const total = skills.reduce((a, k) => a + state.xp[k], 0);
+          const totalEl = document.getElementById("hudXpTotal");
+          if (totalEl) totalEl.textContent = fmt(total);
+          const list = document.getElementById("hudSkills");
+          if (list) {
+            list.innerHTML = skills
+              .sort((a, b) => state.xp[b] - state.xp[a])
+              .slice(0, 5)
+              .map(k => '<span class="sk" style="color:' + skillColor(k) + '">' + esc(k) + '</span>' +
+                        '<span class="sv">' + fmt(state.xp[k]) + '</span>')
+              .join("");
+          }
+        } else {
+          xpRow.style.display = "none";
+        }
+      }
+    }
+    function hideHud() {
+      const hud = document.getElementById("sessionHud");
+      if (hud) hud.style.display = "none";
+      if (fxHpBar) fxHpBar.style.opacity = "0";
+      const box = fxContainer();
+      if (box) Array.from(box.querySelectorAll(".fx-xp, .fx-split")).forEach(el => el.remove());
+    }
+
     function loadSessionForPlayback(session) {
       initLeafletMap();
       const statusEl = document.getElementById("sessionStatus");
       const scrubber = document.getElementById("sessionScrubber");
       activePlayback = null;
+      hideHud();
       if (!session || !session.events || !session.events.length) {
         if (statusEl) statusEl.textContent = "No events";
         return;
@@ -2328,72 +2566,227 @@
       }).addTo(leafletMap);
 
       const FOLLOW_ZOOM = 8;
-      const MS_PER_TILE = 90;
-      const TP_DURATION_MS = 150;
+      const MS_PER_TILE = 90;         // walk legs play at constant tile speed
+      const TP_DURATION_MS = 150;     // the beat a teleport cut occupies
+      const IDLE_MIN_GAP_SEC = 8;     // gaps shorter than this are absorbed
+      const IDLE_MS_PER_SQRT_SEC = 400; // idle playback = 400ms * sqrt(gap seconds)
+      const IDLE_MAX_MS = 20000;      // a multi-hour AFK still tops out here
 
-      const events = session.events.filter(ev =>
-        ev && Array.isArray(ev.f) && Array.isArray(ev.t) &&
-        ev.f.length >= 2 && ev.t.length >= 2 && typeof ev.s === "number");
+      // Every event with a timestamp, in time order. File order is flush
+      // order, which is not the same thing (xp/hp events are written at
+      // save time, after the walks they overlap).
+      const events = session.events
+        .filter(ev => ev && typeof ev.s === "number")
+        .slice()
+        .sort((a, b) => a.s - b.s);
       if (!events.length) {
         if (statusEl) statusEl.textContent = "No valid events";
         return;
       }
+      const positional = events.filter(ev => Array.isArray(ev.t) && ev.t.length >= 2 &&
+        (ev.ty === "walk" ? Array.isArray(ev.f) && ev.f.length >= 2 : true));
 
-      const t0 = events[0].s;
-      const lastEv = events[events.length - 1];
-      const lastEvEnd = lastEv.ty === "walk" ? (lastEv.e != null ? lastEv.e : lastEv.s) : lastEv.s;
-      const t1 = Math.max(t0 + 1, lastEvEnd);
+      const t0 = session.start || events[0].s;
+      let tLast = t0;
+      events.forEach(ev => { tLast = Math.max(tLast, ev.e != null ? ev.e : ev.s); });
+      const t1 = Math.max(t0 + 1, session.end != null ? Math.max(session.end, tLast) : tLast);
 
+      // ---- Build the timeline ----
+      // Segment shapes:
+      //   walk : marker moves from -> to at tile speed
+      //   tp   : instant cut after the flash beat (also used for implicit
+      //          cuts, e.g. a walk that starts somewhere other than where
+      //          the previous one ended - a boat trip the plugin missed)
+      //   idle : marker holds still while the clock runs, gap compressed
       const rawSegments = [];
-      events.forEach(ev => {
-        const isWalk = ev.ty === "walk";
-        const pts = eventLatLngs(ev);
-        const gamePts = eventGameCoords(ev);
-        const evRealStart = ev.s;
-        const evRealEnd = isWalk ? (ev.e != null ? ev.e : ev.s) : ev.s;
+      let lastPos = null;      // {latlng, plane, game:{x,y}}
+      let lastRealEnd = t0;
 
-        const legTileLens = [];
-        let totalTileLen = 0;
-        for (let i = 0; i + 1 < gamePts.length; i++) {
-          const len = Math.max(0.0001, Math.hypot(
-            gamePts[i + 1].x - gamePts[i].x, gamePts[i + 1].y - gamePts[i].y));
-          legTileLens.push(len);
-          totalTileLen += len;
-        }
-        let cumLen = 0;
-        for (let i = 0; i + 1 < pts.length; i++) {
-          const lenBefore = cumLen;
-          cumLen += legTileLens[i];
-          const lenAfter = cumLen;
-          const durationMs = isWalk ? legTileLens[i] * MS_PER_TILE
-            : TP_DURATION_MS;
-          rawSegments.push({
-            from: pts[i], to: pts[i + 1], isWalk,
-            plane: ev.t[2],
-            durationMs,
-            realFrom: evRealStart + (evRealEnd - evRealStart) * (lenBefore / totalTileLen),
-            realTo: evRealStart + (evRealEnd - evRealStart) * (lenAfter / totalTileLen)
-          });
+      function pushIdleIfGap(nextStart, at) {
+        if (!at) return;
+        const gap = nextStart - lastRealEnd;
+        if (gap < IDLE_MIN_GAP_SEC) return;
+        rawSegments.push({
+          type: "idle", from: at.latlng, to: at.latlng, plane: at.plane,
+          durationMs: Math.min(IDLE_MAX_MS, IDLE_MS_PER_SQRT_SEC * Math.sqrt(gap)),
+          realFrom: lastRealEnd, realTo: nextStart, inst: at.inst, boat: at.boat
+        });
+      }
+
+      positional.forEach(ev => {
+        const inst = ev.i === 1, boat = ev.b === 1;
+        if (ev.ty === "walk" || ev.ty === "tp") {
+          const evStart = ev.s;
+          const evEnd = ev.ty === "walk" ? (ev.e != null ? ev.e : ev.s) : ev.s;
+          const fromGame = { x: ev.f[0], y: ev.f[1] };
+          const fromLL = gameToLatLng(ev.f[0], ev.f[1]);
+
+          // Implicit cut when this event doesn't start where we last were.
+          if (lastPos && (lastPos.game.x !== fromGame.x || lastPos.game.y !== fromGame.y ||
+              lastPos.plane !== ev.f[2])) {
+            pushIdleIfGap(evStart, lastPos);
+            rawSegments.push({
+              type: "tp", from: lastPos.latlng, to: fromLL, plane: ev.f[2],
+              durationMs: TP_DURATION_MS, realFrom: evStart, realTo: evStart,
+              inst, boat, implicit: true
+            });
+          } else {
+            pushIdleIfGap(evStart, lastPos);
+          }
+
+          if (ev.ty === "tp") {
+            rawSegments.push({
+              type: "tp", from: fromLL, to: gameToLatLng(ev.t[0], ev.t[1]), plane: ev.t[2],
+              durationMs: TP_DURATION_MS, realFrom: evStart, realTo: evStart, inst, boat,
+              label: ev.lbl || null
+            });
+          } else {
+            const pts = eventLatLngs(ev);
+            const gamePts = eventGameCoords(ev);
+            const runs = walkLegRunStates(ev);
+            const legLens = [];
+            let total = 0;
+            for (let i = 0; i + 1 < gamePts.length; i++) {
+              const len = Math.max(0.0001, Math.hypot(
+                gamePts[i + 1].x - gamePts[i].x, gamePts[i + 1].y - gamePts[i].y));
+              legLens.push(len); total += len;
+            }
+            let cum = 0;
+            for (let i = 0; i + 1 < pts.length; i++) {
+              const before = cum; cum += legLens[i];
+              rawSegments.push({
+                type: "walk", from: pts[i], to: pts[i + 1], plane: ev.t[2],
+                durationMs: legLens[i] * MS_PER_TILE,
+                realFrom: evStart + (evEnd - evStart) * (before / total),
+                realTo: evStart + (evEnd - evStart) * (cum / total),
+                run: runs[i], inst, boat
+              });
+            }
+          }
+          lastPos = { latlng: gameToLatLng(ev.t[0], ev.t[1]), plane: ev.t[2],
+            game: { x: ev.t[0], y: ev.t[1] }, inst, boat };
+          lastRealEnd = Math.max(lastRealEnd, evEnd);
+        } else if (!lastPos) {
+          // Session opened with a stationary event (xp/hp/bank) - it tells
+          // us where the player is, even though nothing moved yet.
+          lastPos = { latlng: gameToLatLng(ev.t[0], ev.t[1]), plane: ev.t[2],
+            game: { x: ev.t[0], y: ev.t[1] }, inst, boat };
+          lastRealEnd = ev.s;
         }
       });
+
+      // Trailing idle so the session's real end is reachable on the clock.
+      if (lastPos && t1 - lastRealEnd >= IDLE_MIN_GAP_SEC) pushIdleIfGap(t1, lastPos);
+
+      if (!rawSegments.length) {
+        // Nothing moved at all: a single idle segment for the whole session.
+        const at = lastPos || (positional[0] && {
+          latlng: gameToLatLng(positional[0].t[0], positional[0].t[1]), plane: positional[0].t[2]
+        });
+        if (!at) { if (statusEl) statusEl.textContent = "No valid events"; return; }
+        rawSegments.push({
+          type: "idle", from: at.latlng, to: at.latlng, plane: at.plane,
+          durationMs: Math.min(IDLE_MAX_MS, IDLE_MS_PER_SQRT_SEC * Math.sqrt(Math.max(1, t1 - t0))),
+          realFrom: t0, realTo: t1
+        });
+      }
 
       const PLAYBACK_MS = Math.max(1, rawSegments.reduce((a, s) => a + s.durationMs, 0));
       let cumMs = 0;
-      const segments = rawSegments.map(s => {
-        const startFrac = cumMs / PLAYBACK_MS;
-        cumMs += s.durationMs;
-        return {
-          from: s.from, to: s.to, isWalk: s.isWalk, plane: s.plane,
-          startFrac, endFrac: cumMs / PLAYBACK_MS,
-          realFrom: s.realFrom, realTo: s.realTo,
+      const segments = rawSegments.map(r => {
+        const startMs = cumMs;
+        cumMs += r.durationMs;
+        return Object.assign({}, r, {
+          startMs, endMs: cumMs,
+          startFrac: startMs / PLAYBACK_MS, endFrac: cumMs / PLAYBACK_MS,
+          isWalk: r.type === "walk",
+          snap: r.type === "tp",
           tileUrls: null
-        };
+        });
       });
 
-      // Prefetch only the next couple of teleport destinations ahead of
-      // wherever playback currently is, rather than every teleport in the
-      // session up front - a long session could fire thousands of tile
-      // requests on load and drown the tiles actually being looked at.
+      // Real session time -> playback ms. Within a segment interpolate
+      // its real span; between segments (a gap too short to get an idle
+      // segment) clamp to the boundary.
+      function realToPlaybackMs(t) {
+        if (t <= segments[0].realFrom) return 0;
+        for (let i = 0; i < segments.length; i++) {
+          const sg = segments[i];
+          if (t >= sg.realFrom && t <= sg.realTo) {
+            const span = sg.realTo - sg.realFrom;
+            const f = span > 0 ? (t - sg.realFrom) / span : 1;
+            return sg.startMs + (sg.endMs - sg.startMs) * f;
+          }
+          if (t < sg.realFrom) return sg.startMs; // fell in an absorbed gap
+        }
+        return PLAYBACK_MS;
+      }
+
+      // ---- Cues: things that happen at a moment (xp drops, hp changes) ----
+      const cues = [];
+      let hasHp = false;
+      events.forEach(ev => {
+        if (ev.ty === "xp" && ev.xp) {
+          cues.push({ ms: realToPlaybackMs(ev.s), type: "xp", gains: ev.xp });
+        } else if (ev.ty === "hp" && Array.isArray(ev.hp)) {
+          hasHp = true;
+          for (let i = 0; i + 1 < ev.hp.length; i += 2) {
+            cues.push({ ms: realToPlaybackMs(ev.s + ev.hp[i]), type: "hp", value: ev.hp[i + 1], max: ev.mx || 0 });
+          }
+        }
+      });
+      cues.sort((a, b) => a.ms - b.ms);
+
+      const hudState = { hp: 0, hpMax: 0, hasHp, xp: {} };
+      let cueIdx = 0;
+      let announcedComplete = false;
+
+      function applyCue(c, animate) {
+        if (c.type === "xp") {
+          let k = 0;
+          Object.keys(c.gains).forEach(skill => {
+            hudState.xp[skill] = (hudState.xp[skill] || 0) + c.gains[skill];
+            if (animate) spawnXpDrop(skill, c.gains[skill], k++);
+          });
+        } else if (c.type === "hp") {
+          const prev = hudState.hpMax ? hudState.hp : null;
+          if (c.max) hudState.hpMax = c.max;
+          hudState.hp = c.value;
+          if (animate && prev !== null) {
+            const delta = c.value - prev;
+            // Regen ticks and other 1-point changes stay quiet; the bar
+            // still updates. Anything bigger gets a splat.
+            if (Math.abs(delta) >= 2) spawnHitsplat(delta);
+          }
+        }
+      }
+      // Rebuild HUD state from scratch up to a playback time (scrub/step).
+      function syncCuesTo(ms) {
+        hudState.hp = 0; hudState.hpMax = 0; hudState.xp = {};
+        cueIdx = 0;
+        while (cueIdx < cues.length && cues[cueIdx].ms <= ms) { applyCue(cues[cueIdx], false); cueIdx++; }
+        if (!hudState.hpMax && hasHp) {
+          // Before the first hp sample the player is assumed full.
+          const firstHp = cues.find(c => c.type === "hp");
+          if (firstHp && firstHp.max) { hudState.hpMax = firstHp.max; hudState.hp = firstHp.max; }
+        }
+        renderHud(hudState, ms >= PLAYBACK_MS ? "complete" : "");
+      }
+      // Fire cues crossed since the last frame (normal playback).
+      function fireCuesUpTo(ms) {
+        let fired = false;
+        while (cueIdx < cues.length && cues[cueIdx].ms <= ms) { applyCue(cues[cueIdx], true); cueIdx++; fired = true; }
+        if (fired) renderHud(hudState, "");
+      }
+      function onComplete() {
+        if (announcedComplete) return;
+        announcedComplete = true;
+        renderHud(hudState, "complete");
+        const hud = document.getElementById("sessionHud");
+        if (hud) { hud.classList.remove("hud-complete"); void hud.offsetWidth; hud.classList.add("hud-complete"); }
+      }
+
+      // ---- Prefetch (unchanged in spirit) ----
       const TELEPORT_LOOKAHEAD = 2;
       let lastLookaheadIdx = -1;
       function prefetchUpcomingTeleports(fromIdx) {
@@ -2402,7 +2795,7 @@
         let found = 0;
         for (let i = fromIdx; i < segments.length && found < TELEPORT_LOOKAHEAD; i++) {
           const seg = segments[i];
-          if (seg.isWalk) continue;
+          if (!seg.snap) continue;
           found++;
           if (seg.tileUrls === null) {
             seg.tileUrls = preloadTeleportDestination(seg.to, FOLLOW_ZOOM,
@@ -2412,10 +2805,6 @@
       }
       prefetchUpcomingTeleports(0);
 
-      // Also warm tiles along the next few seconds of route, so smooth
-      // pans during walks land on tiles that are already loaded. Runs at
-      // most every ROUTE_AHEAD_EVERY_MS of real time; dedupe in the
-      // prefetch queue makes repeats free.
       const ROUTE_AHEAD_MS = 10000;
       const ROUTE_AHEAD_EVERY_MS = 1500;
       let lastRouteAheadAt = 0;
@@ -2458,24 +2847,32 @@
         playbackMarker.setLatLng(latlng);
         playbackHalo.setLatLng(latlng);
 
-        const shouldSnap = snapCamera || !seg.isWalk;
+        const shouldSnap = snapCamera || seg.snap;
         if (shouldSnap) {
           leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), FOLLOW_ZOOM), { animate: false });
-        } else {
+        } else if (seg.isWalk) {
           leafletMap.panTo(latlng, { animate: true, duration: 0.15, easeLinearity: 1 });
         }
+        positionFxHpBar();
 
         const realTime = seg.realFrom + (seg.realTo - seg.realFrom) * segFrac;
-        const elapsedSec = realTime - t0;
-        const totalSec = t1 - t0;
-        if (statusEl) statusEl.textContent = formatDuration(elapsedSec) + " / " + formatDuration(totalSec);
+        if (statusEl && !statusEl.dataset.outage) {
+          const idleTag = seg.type === "idle" ? "  (idle)" : "";
+          statusEl.textContent = formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+        }
         if (scrubber) scrubber.value = Math.round(frac * 1000);
         updateInstanceBanner();
+
+        // Scrubs and steps rebuild HUD state; frame-by-frame playback fires
+        // cues incrementally from the tick loop instead.
+        if (snapCamera) syncCuesTo(frac * PLAYBACK_MS);
       }
 
       activePlayback = {
-        PLAYBACK_MS, seekTo, segments, elapsedMs: 0, paused: true,
-        lastAnnouncedSegIndex: -1, flashing: false
+        PLAYBACK_MS, seekTo, segments, cues, elapsedMs: 0, paused: true,
+        lastAnnouncedSegIndex: -1, flashing: false,
+        fireCuesUpTo, syncCuesTo, onComplete,
+        resetCues: () => { announcedComplete = false; syncCuesTo(0); }
       };
       seekTo(0, true);
       activePlayback.lastAnnouncedSegIndex = findSegmentIndex(segments, 0);
@@ -2488,6 +2885,7 @@
         activePlayback.elapsedMs = 0;
         activePlayback.lastAnnouncedSegIndex = findSegmentIndex(activePlayback.segments, 0);
         activePlayback.flashing = false;
+        activePlayback.resetCues();
       }
       activePlayback.paused = !activePlayback.paused;
       lastFrameTime = null;
