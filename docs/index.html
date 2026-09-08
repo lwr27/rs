@@ -292,7 +292,7 @@
   }
   .map-bottom {
     position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 1001;
-    display: flex; gap: 8px; align-items: center;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
     background: var(--panel); padding: 8px 10px; border-radius: 6px;
     border: 1px solid var(--panel-border);
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
@@ -316,14 +316,17 @@
 
   /* Session strip: one pill per session, width by duration */
   .session-strip {
-    display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 0 0 6px 0; margin-bottom: 4px;
+    flex: 0 0 100%; width: 100%; box-sizing: border-box;
+    display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 2px 0 6px 0;
+    border-bottom: 1px solid var(--panel-border); margin-bottom: 2px;
     scrollbar-width: thin;
   }
   .session-pill {
-    flex: 0 0 auto; position: relative; min-width: 64px; height: 34px; border-radius: 6px;
+    flex: 0 0 auto; position: relative; min-width: 64px; height: 36px; border-radius: 6px;
     background: var(--cell); border: 1px solid var(--panel-border); cursor: pointer;
-    padding: 4px 8px; box-sizing: border-box; overflow: hidden; color: var(--text-dim);
-    font-size: 0.7rem; line-height: 1.2; transition: border-color 120ms ease, transform 120ms ease;
+    padding: 4px 8px 6px 8px; box-sizing: border-box; overflow: hidden; color: var(--text-dim);
+    font-size: 0.7rem; line-height: 1.25; white-space: nowrap;
+    transition: border-color 120ms ease, transform 120ms ease;
   }
   .session-pill:hover { transform: translateY(-1px); border-color: var(--text-faint); }
   .session-pill.active { border-color: var(--pill-color); color: var(--text); box-shadow: inset 0 0 0 1px var(--pill-color); }
@@ -1733,12 +1736,12 @@
         const flags = (q.inst ? "⚔" : "") + (q.boat ? "⛵" : "");
         pill.innerHTML =
           '<div class="pill-time">' + esc(day) + " " + esc(time) + '</div>' +
-          '<div class="pill-meta">' + formatDuration(dur) +
+          '<div class="pill-meta">' + formatMinutes(dur) +
             (tiles ? " · " + formatTiles(tiles) + " t" : "") +
             (q.xp ? " · " + formatTiles(q.xp) + " xp" : "") + '</div>' +
           (flags ? '<div class="pill-flags">' + flags + '</div>' : "") +
           '<div class="pill-bar"></div>';
-        pill.title = formatDuration(dur) +
+        pill.title = formatMinutes(dur) +
           (tiles ? ", " + fmt(tiles) + " tiles" : "") +
           (q.tps ? ", " + q.tps + " teleport" + (q.tps === 1 ? "" : "s") : "") +
           (q.banks ? ", " + q.banks + " bank" + (q.banks === 1 ? "" : "s") : "") +
@@ -1753,6 +1756,10 @@
         });
         strip.appendChild(pill);
       });
+    }
+    function formatMinutes(sec) {
+      const m = Math.round(sec / 60);
+      return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + "m";
     }
     function setActiveSessionPill(idx) {
       document.querySelectorAll("#sessionStrip .session-pill").forEach(p => {
