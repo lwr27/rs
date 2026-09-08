@@ -305,14 +305,7 @@
     border-radius: 4px; padding: 5px 8px; font-family: inherit; font-size: 0.8rem;
     flex-shrink: 0; max-width: 100%;
   }
-  .scrub-wrap { flex: 1 1 auto; min-width: 0; position: relative; padding-top: 10px; }
-  #sessionScrubber { width: 100%; min-width: 0; display: block; margin: 0; }
-  .scrub-ticks { position: absolute; left: 0; right: 0; top: 0; height: 10px; pointer-events: none; }
-  .scrub-ticks .xpbin { position: absolute; bottom: 0; height: 6px; background: var(--text); border-radius: 1px 1px 0 0; }
-  .scrub-ticks .tick { position: absolute; bottom: 0; width: 2px; height: 10px; transform: translateX(-1px); }
-  .scrub-ticks .tick.tp { background: var(--text); opacity: 0.9; }
-  .scrub-ticks .tick.bank { width: 6px; height: 6px; border-radius: 50%; bottom: 2px; transform: translateX(-3px); background: #f0c419; }
-  .scrub-ticks .tick.idle { height: 4px; width: auto; transform: none; background: var(--text-faint); opacity: 0.5; border-radius: 2px; }
+  #sessionScrubber { flex: 1 1 auto; min-width: 0; }
 
   #sessionStatus {
     color: var(--text-faint); font-size: 0.72rem; min-width: 100px; text-align: right;
@@ -443,10 +436,7 @@
         <div class="map-bottom-row map-playback">
           <button id="sessionPlayBtn" class="tab-btn map-btn">▶</button>
           <button id="speedBtn" class="tab-btn map-btn" title="Playback speed">1x</button>
-          <div class="scrub-wrap">
-            <div id="scrubTicks" class="scrub-ticks"></div>
-            <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
-          </div>
+          <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
           <span id="sessionStatus"></span>
         </div>
       </div>
@@ -1690,67 +1680,6 @@
       return { xp, tps, banks, inst, boat, hpLow };
     }
 
-    // Ticks above the scrubber: teleports, banks, idle stretches, and xp
-    // density in 80 bins, so long sessions can be read at a glance.
-    function renderScrubTicks(segments, cues, playbackMs, sessionEvents) {
-      const box = document.getElementById("scrubTicks");
-      if (!box) return;
-      box.innerHTML = "";
-      const BINS = 80;
-      const bins = new Array(BINS).fill(0);
-      cues.forEach(c => {
-        if (c.type !== "xp") return;
-        const amount = Object.values(c.gains).reduce((a, v) => a + v, 0);
-        const b = Math.min(BINS - 1, Math.floor((c.ms / playbackMs) * BINS));
-        bins[b] += amount;
-      });
-      const maxBin = Math.max(0, ...bins);
-      if (maxBin > 0) {
-        bins.forEach((v, i) => {
-          if (!v) return;
-          const el = document.createElement("div");
-          el.className = "xpbin";
-          el.style.left = (i / BINS * 100) + "%";
-          el.style.width = (100 / BINS) + "%";
-          el.style.opacity = (0.15 + 0.6 * Math.sqrt(v / maxBin)).toFixed(2);
-          el.style.background = currentPlayerColor;
-          box.appendChild(el);
-        });
-      }
-      segments.forEach(seg => {
-        if (seg.type === "idle") {
-          const el = document.createElement("div");
-          el.className = "tick idle";
-          el.style.left = (seg.startFrac * 100) + "%";
-          el.style.width = ((seg.endFrac - seg.startFrac) * 100) + "%";
-          box.appendChild(el);
-        } else if (seg.snap && !seg.implicit) {
-          const el = document.createElement("div");
-          el.className = "tick tp";
-          el.style.left = (seg.startFrac * 100) + "%";
-          box.appendChild(el);
-        }
-      });
-      // Banks: map real time to playback via the nearest segment.
-      (sessionEvents || []).forEach(ev => {
-        if (ev.ty !== "bank" || typeof ev.s !== "number") return;
-        let ms = null;
-        for (const seg of segments) {
-          if (ev.s >= seg.realFrom && ev.s <= seg.realTo) {
-            const span = seg.realTo - seg.realFrom;
-            ms = seg.startMs + (seg.endMs - seg.startMs) * (span > 0 ? (ev.s - seg.realFrom) / span : 1);
-            break;
-          }
-          if (ev.s < seg.realFrom) { ms = seg.startMs; break; }
-        }
-        if (ms === null) ms = playbackMs;
-        const el = document.createElement("div");
-        el.className = "tick bank";
-        el.style.left = (ms / playbackMs * 100) + "%";
-        box.appendChild(el);
-      });
-    }
-
     function populateSessionSelect(sessions) {
       const select = document.getElementById("sessionSelect");
       if (!select) return;
@@ -2701,8 +2630,6 @@
       const scrubber = document.getElementById("sessionScrubber");
       activePlayback = null;
       hideHud();
-      const ticksBox = document.getElementById("scrubTicks");
-      if (ticksBox) ticksBox.innerHTML = "";
       if (!session || !session.events || !session.events.length) {
         if (statusEl) statusEl.textContent = "No events";
         return;
@@ -3084,7 +3011,6 @@
       seekTo(0, true);
       activePlayback.lastAnnouncedSegIndex = findSegmentIndex(segments, 0);
       setPlayButtonIcon(true);
-      renderScrubTicks(segments, cues, PLAYBACK_MS, events);
       showSessionSummary(session);
     }
 
