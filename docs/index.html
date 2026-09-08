@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>OSRS XP Tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="preconnect" href="https://lwr27.github.io" crossorigin />
+<link rel="preconnect" href="https://lwr27.github.io" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="leaflet-heat.js"></script>
@@ -1348,12 +1348,11 @@
         if (loadedTileUrls.has(url)) continue;
         prefetchInFlight++;
         const img = new Image();
-        img.crossOrigin = "anonymous"; // match the tile layer so the SW cache is shared
         img.fetchPriority = "low";
         const finish = (failed) => {
           prefetchInFlight--;
           loadedTileUrls.add(url);
-          if (failed) failedTileUrls.add(url);
+          if (failed) { failedTileUrls.add(url); evictTileFromCache(url); }
           pumpPrefetchQueue();
         };
         img.onload = () => finish(false);
@@ -1584,6 +1583,19 @@
     // increasing delay before giving up, which is the difference between
     // a momentary hiccup and a black patch that sits there.
     const TILE_RETRY_DELAYS_MS = [400, 1500, 4000];
+
+    // The tile host doesn't send CORS headers, so tiles are fetched as
+    // plain image requests and the service worker (sw.js) cannot see their
+    // status codes - it caches whatever comes back. If a cached tile turns
+    // out to be broken (the image fails to decode), the page drops that
+    // entry so the retry goes back to the network instead of hitting the
+    // same bad copy again.
+    const TILE_CACHE_NAME = "rs-map-tiles-v1";
+    function evictTileFromCache(url) {
+      if (!("caches" in window)) return;
+      const key = url.split("?")[0];
+      caches.open(TILE_CACHE_NAME).then(c => c.delete(key)).catch(() => {});
+    }
     const RetryingTileLayer = L.TileLayer.extend({
       createTile: function (coords, done) {
         const tile = document.createElement("img");
@@ -1595,6 +1607,7 @@
         L.DomEvent.on(tile, "error", (e) => {
           // Only retry while Leaflet still wants this tile - if it was
           // pruned after a pan/zoom there's nothing to put the image in.
+          evictTileFromCache(url);
           if (attempt < TILE_RETRY_DELAYS_MS.length && this._tiles[key]) {
             const delay = TILE_RETRY_DELAYS_MS[attempt++];
             setTimeout(() => {
@@ -1630,10 +1643,7 @@
         maxZoom: MAP_MAX_ZOOM,
         noWrap: true,
         tms: true,
-        keepBuffer: 4,
-        // CORS requests expose the real status, which the service worker
-        // needs so it never caches a failed tile.
-        crossOrigin: "anonymous"
+        keepBuffer: 4
       }).addTo(leafletMap);
 
       planeTileLayer.on("tileload", () => { lastTileLoadTime = Date.now(); noteTileLoad(); updateInstanceBanner(); });

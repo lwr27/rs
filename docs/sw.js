@@ -47,10 +47,12 @@ self.addEventListener("fetch", (event) => {
     if (hit) return hit;
 
     const response = await fetch(event.request);
-    // Only store real successes. Requests are made with CORS so the
-    // status is visible; a 404 or a 5xx must never be cached or the
-    // tile would be broken forever.
-    if (response.ok) {
+    // Tiles arrive as plain (no-cors) image requests, which means their
+    // status code is hidden from us ("opaque"). Those are cached too;
+    // the page drops any entry whose image fails to decode (see
+    // evictTileFromCache in index.html), so a cached 404 or error page
+    // can't stick around.
+    if (response.ok || response.type === "opaque") {
       event.waitUntil((async () => {
         await cache.put(key, response.clone());
         if (++putsSinceTrim >= TRIM_EVERY) {
