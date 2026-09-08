@@ -375,7 +375,7 @@
         </div>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
-      <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none; transition:opacity 150ms ease;"></canvas>
+      <canvas id="fogCanvas" style="display:none; position:absolute; inset:0; z-index:999; pointer-events:none; will-change:transform;"></canvas>
       <div id="instanceBanner" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1002; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:10px 16px; color:var(--text-dim); font-size:0.85rem; text-align:center; max-width:320px;">No map imagery here — likely inside a player-owned house or other instance</div>
     </div>
   </div>
@@ -1606,11 +1606,14 @@
       // fights against the animation and looks janky. While it's actually
       // animating, show plain full-coverage fog instead (everything hidden
       // until the redraw), rather than a stale, misaligned set of holes.
-      leafletMap.on("movestart zoomstart", () => {
-        if (fogEnabled) fillSolidFog();
+      leafletMap.on("move", () => {
+        if (fogEnabled) trackFogToView(leafletMap.getCenter(), leafletMap.getZoom());
+      });
+      leafletMap.on("zoomanim", (e) => {
+        if (fogEnabled) trackFogToView(e.center, e.zoom);
       });
       leafletMap.on("moveend zoomend", () => {
-        if (fogEnabled) redrawFog();
+        if (fogEnabled) requestAnimationFrame(redrawFog);
       });
     }
 
@@ -1640,27 +1643,70 @@
     // naturally contributes many points already - this keeps a route
     // that's just passed through once from looking as "hot" as a spot
     // that's genuinely been a real destination many times.
+    // Walk events only store corners, so a long straight run is two points
+    // with nothing between. Calls fn(x, y) for every point along the path
+    // at roughly stepTiles spacing so overlays see the whole route.
+    function forEachWalkPoint(ev, stepTiles, fn) {
+      const pts = eventGameCoords(ev);
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        const steps = Math.max(1, Math.ceil(dist / stepTiles));
+        for (let st = (i === 0 ? 0 : 1); st <= steps; st++) {
+          const t = st / steps;
+          fn(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+        }
+      }
+    }
+
+    // Runs fn over every event of every session, yielding to the browser
+    // every so often so building an overlay for a year of data doesn't
+    // freeze the page.
+    async function forEachEventChunked(sessions, fn) {
+      const YIELD_EVERY = 150;
+      for (let i = 0; i < sessions.length; i++) {
+        (sessions[i].events || []).forEach(fn);
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+    }
+
+    // Positions are summed into a coarse grid before being handed to the
+    // heat layer: far fewer points to render, and "hot" then means a cell
+    // was visited a lot rather than that a twisty path once left a lot of
+    // corners there. Intensity is square-rooted so one heavily camped
+    // bank tile doesn't wash out everything else.
+    const HEAT_CELL_TILES = 3;
+    const HEAT_WALK_STEP_TILES = 2;
+
     async function buildHeatmapPoints(hash) {
       const sessions = await fetchAllPlayerSessions(hash);
+      const cellsByPlane = {}; // plane -> Map("gx,gy" -> summed weight)
+      const bump = (plane, x, y, w) => {
+        if (!cellsByPlane[plane]) cellsByPlane[plane] = new Map();
+        const key = Math.floor(x / HEAT_CELL_TILES) + "," + Math.floor(y / HEAT_CELL_TILES);
+        const m = cellsByPlane[plane];
+        m.set(key, (m.get(key) || 0) + w);
+      };
+      await forEachEventChunked(sessions, ev => {
+        if (ev.ty === "bank" || !ev.f || !ev.t) return;
+        const plane = ev.f[2];
+        if (ev.ty === "walk") {
+          forEachWalkPoint(ev, HEAT_WALK_STEP_TILES, (x, y) => bump(plane, x, y, 0.5));
+        } else {
+          bump(plane, ev.t[0], ev.t[1], 1);
+        }
+      });
       const byPlane = {};
-      {
-        sessions.forEach(session => {
-          (session.events || []).forEach(ev => {
-            if (ev.ty === "bank" || !ev.f || !ev.t) return;
-            const plane = ev.f[2];
-            if (!byPlane[plane]) byPlane[plane] = [];
-            if (ev.ty === "walk") {
-              eventGameCoords(ev).forEach(p => {
-                const ll = gameToLatLng(p.x, p.y);
-                byPlane[plane].push([ll.lat, ll.lng, 0.5]);
-              });
-            } else {
-              const ll = gameToLatLng(ev.t[0], ev.t[1]);
-              byPlane[plane].push([ll.lat, ll.lng, 1]);
-            }
-          });
+      Object.keys(cellsByPlane).forEach(plane => {
+        byPlane[plane] = [];
+        cellsByPlane[plane].forEach((w, key) => {
+          const [gx, gy] = key.split(",").map(Number);
+          const ll = gameToLatLng((gx + 0.5) * HEAT_CELL_TILES, (gy + 0.5) * HEAT_CELL_TILES);
+          byPlane[plane].push([ll.lat, ll.lng, Math.sqrt(w)]);
         });
-      }
+      });
       return byPlane;
     }
 
@@ -1682,7 +1728,7 @@
         (heatmapPointsByHash[h] && heatmapPointsByHash[h][currentPlane]) || []);
       if (heatmapLayer) leafletMap.removeLayer(heatmapLayer);
       heatmapLayer = L.heatLayer(points, {
-        radius: 18, blur: 22, maxZoom: MAP_MAX_ZOOM, max: 3
+        radius: 18, blur: 22, maxZoom: MAP_MAX_ZOOM, max: 4
       }).addTo(leafletMap);
     }
 
@@ -1720,30 +1766,17 @@
     async function buildExploredCells(hash) {
       const sessions = await fetchAllPlayerSessions(hash);
       const byPlane = {};
-      {
-        sessions.forEach(session => {
-          (session.events || []).forEach(ev => {
-            if (ev.ty === "bank" || !ev.f || !ev.t) return;
-            const plane = ev.f[2];
-            if (!byPlane[plane]) byPlane[plane] = new Set();
-            const bucket = byPlane[plane];
-            if (ev.ty === "walk") {
-              const pts = eventGameCoords(ev);
-              for (let i = 0; i + 1 < pts.length; i++) {
-                const a = pts[i], b = pts[i + 1];
-                const dist = Math.hypot(b.x - a.x, b.y - a.y);
-                const steps = Math.max(1, Math.ceil(dist / (FOG_CELL_TILES / 2)));
-                for (let s = 0; s <= steps; s++) {
-                  const t = s / steps;
-                  markFogCell(bucket, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-                }
-              }
-            } else {
-              markFogCell(bucket, ev.t[0], ev.t[1]);
-            }
-          });
-        });
-      }
+      await forEachEventChunked(sessions, ev => {
+        if (ev.ty === "bank" || !ev.f || !ev.t) return;
+        const plane = ev.f[2];
+        if (!byPlane[plane]) byPlane[plane] = new Set();
+        const bucket = byPlane[plane];
+        if (ev.ty === "walk") {
+          forEachWalkPoint(ev, FOG_CELL_TILES / 2, (x, y) => markFogCell(bucket, x, y));
+        } else {
+          markFogCell(bucket, ev.t[0], ev.t[1]);
+        }
+      });
       return byPlane;
     }
 
@@ -1758,6 +1791,11 @@
     // visibly misaligned while the map itself is still animating between
     // zoom levels. Swapped back out for the real redrawFog() once the
     // animation settles.
+    // Map centre/zoom the fog holes were last drawn for, so the canvas can
+    // be shifted/scaled to track the map while a pan or zoom is in flight.
+    let fogDrawnCenter = null;
+    let fogDrawnZoom = null;
+
     function fillSolidFog() {
       const canvas = document.getElementById("fogCanvas");
       const mapDiv = document.getElementById("leafletMap");
@@ -1811,19 +1849,58 @@
 
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = "rgba(0,0,0,1)";
-      for (let gx = gx0; gx <= gx1; gx++) {
-        for (let gy = gy0; gy <= gy1; gy++) {
-          if (!cells.has(gx + "," + gy)) continue;
-          const centerGameX = (gx + 0.5) * FOG_CELL_TILES;
-          const centerGameY = (gy + 0.5) * FOG_CELL_TILES;
-          const ll = gameToLatLng(centerGameX, centerGameY);
-          const pt = leafletMap.latLngToContainerPoint(ll);
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, cellPx * 0.75, 0, Math.PI * 2);
-          ctx.fill();
+      const r = cellPx * 0.75;
+      // All holes go into one path and are filled once - far cheaper than
+      // a fill() per hole when thousands are on screen.
+      ctx.beginPath();
+      const punch = (gx, gy) => {
+        const ll = gameToLatLng((gx + 0.5) * FOG_CELL_TILES, (gy + 0.5) * FOG_CELL_TILES);
+        const pt = leafletMap.latLngToContainerPoint(ll);
+        ctx.moveTo(pt.x + r, pt.y);
+        ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+      };
+      // Zoomed out, the viewport covers vastly more cells than were ever
+      // explored, so walk the explored set and cull to the viewport
+      // instead of probing every viewport cell.
+      const viewportCells = (gx1 - gx0 + 1) * (gy1 - gy0 + 1);
+      if (cells.size < viewportCells) {
+        cells.forEach(key => {
+          const comma = key.indexOf(",");
+          const gx = +key.slice(0, comma), gy = +key.slice(comma + 1);
+          if (gx < gx0 || gx > gx1 || gy < gy0 || gy > gy1) return;
+          punch(gx, gy);
+        });
+      } else {
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            if (cells.has(gx + "," + gy)) punch(gx, gy);
+          }
         }
       }
+      ctx.fill();
       ctx.globalCompositeOperation = "source-over";
+
+      canvas.style.transform = "";
+      fogDrawnCenter = leafletMap.getCenter();
+      fogDrawnZoom = zoom;
+    }
+
+    // While the map is mid-pan or mid-zoom, shift/scale the last drawn fog
+    // canvas so the holes stay glued to the tiles, rather than blanking to
+    // solid fog until the move settles. Pure CSS transform, no redraw.
+    function trackFogToView(center, zoom) {
+      if (!fogEnabled || !leafletMap || !fogDrawnCenter) return;
+      const canvas = document.getElementById("fogCanvas");
+      if (!canvas) return;
+      const size = leafletMap.getSize();
+      const scale = leafletMap.getZoomScale(zoom, fogDrawnZoom);
+      const drawnCenterPx = leafletMap.project(fogDrawnCenter, fogDrawnZoom);
+      const newCenterPx = leafletMap.project(center, zoom);
+      // newContainerPt = scale * oldContainerPt + T
+      const tx = scale * (drawnCenterPx.x - size.x / 2) - newCenterPx.x + size.x / 2;
+      const ty = scale * (drawnCenterPx.y - size.y / 2) - newCenterPx.y + size.y / 2;
+      canvas.style.transformOrigin = "0 0";
+      canvas.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
     }
 
     async function toggleFog() {
