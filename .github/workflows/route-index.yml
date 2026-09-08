@@ -1,0 +1,65 @@
+# Rebuilds docs/route-data/index.json whenever a route file is uploaded,
+# so the site can find per-account per-day files without probing.
+#
+# Loop safety: the index file itself is excluded from the trigger paths,
+# so the commit this workflow makes does not re-trigger it.
+name: Route data index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/route-data/**"
+      - "!docs/route-data/index.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: route-index
+  cancel-in-progress: true
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build index.json
+        run: |
+          python3 - <<'PY'
+          import json, os, re, datetime
+          root = "docs/route-data"
+          day_re = re.compile(r"^(\d{4}-\d{2}-\d{2})\.json$")
+          hash_re = re.compile(r"^-?\d+$")
+          players = {}
+          for name in sorted(os.listdir(root)):
+              folder = os.path.join(root, name)
+              if not (os.path.isdir(folder) and hash_re.match(name)):
+                  continue
+              days = sorted(m.group(1) for f in os.listdir(folder)
+                            for m in [day_re.match(f)] if m)
+              if days:
+                  players[name] = {"days": days}
+          index = {
+              "generated": datetime.datetime.now(datetime.timezone.utc)
+                  .strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "players": players,
+          }
+          with open(os.path.join(root, "index.json"), "w") as f:
+              json.dump(index, f, separators=(",", ":"))
+          print(json.dumps({h: len(p["days"]) for h, p in players.items()}))
+          PY
+
+      - name: Commit index.json
+        run: |
+          git config user.name "route-index[bot]"
+          git config user.email "route-index@users.noreply.github.com"
+          git add docs/route-data/index.json
+          if git diff --cached --quiet; then
+            echo "Index unchanged"
+          else
+            git commit -m "Update route-data index"
+            git push
+          fi
