@@ -343,6 +343,12 @@
     75%  { opacity: 1; }
     100% { opacity: 0; transform: translate(-50%, -80%) scale(1); }
   }
+  .fx-place {
+    position: absolute; transform: translate(-50%, 0); white-space: nowrap;
+    font-size: 0.72rem; font-weight: 600; color: var(--text);
+    text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.9);
+    opacity: 0; transition: opacity 250ms ease;
+  }
   .fx-hpbar {
     position: absolute; transform: translate(-50%, 0); width: 34px; height: 5px;
     background: #7b1c14; border: 1px solid #000; box-sizing: content-box;
@@ -1870,8 +1876,10 @@
       leafletMap.on("move", () => {
         if (fogEnabled) trackFogToView(leafletMap.getCenter(), leafletMap.getZoom());
         positionFxHpBar();
+        positionFxPlace();
       });
-      leafletMap.on("zoomend", positionFxHpBar);
+      leafletMap.on("zoomend", () => { positionFxHpBar(); positionFxPlace(); });
+      loadMapLabels();
       leafletMap.on("zoomanim", (e) => {
         if (fogEnabled) trackFogToView(e.center, e.zoom);
       });
@@ -2522,6 +2530,82 @@
       spawnFx("fx-split " + cls, String(Math.abs(delta)), 0, 0, 1200);
     }
 
+    // ---- Place names ----
+    // Map labels from the game's own world map (via Explv's map data):
+    // [name, x, y, plane, size] where size 2 = city, 1 = area, 0 = small.
+    // A position takes the name of the nearest label whose reach covers
+    // it; bigger labels reach further, so a road outside Falador still
+    // reads "Falador" until something closer takes over.
+    let mapLabels = null;
+    let mapLabelsPromise = null;
+    // Reach in tiles by label size. Size 2 is kingdom/region names
+    // (Asgarnia, Morytania) - only used when nothing more specific is
+    // in range, so the marker says "Falador" not "Kingdom of Asgarnia".
+    const LABEL_REACH = [60, 100, 400];
+    function loadMapLabels() {
+      if (mapLabelsPromise) return mapLabelsPromise;
+      mapLabelsPromise = fetch("data/map_labels.json")
+        .then(r => r.ok ? r.json() : [])
+        .then(list => { mapLabels = Array.isArray(list) ? list : []; return mapLabels; })
+        .catch(() => { mapLabels = []; return mapLabels; });
+      return mapLabelsPromise;
+    }
+    function placeNameFor(x, y, plane) {
+      if (!mapLabels || !mapLabels.length) return null;
+      let best = null, bestScore = Infinity;
+      let region = null, regionScore = Infinity;
+      for (let i = 0; i < mapLabels.length; i++) {
+        const l = mapLabels[i];
+        if (l[3] !== plane) continue;
+        const dx = l[1] - x, dy = l[2] - y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const size = l[4] || 0;
+        const reach = LABEL_REACH[size] || LABEL_REACH[0];
+        if (d > reach) continue;
+        const score = d / reach; // 0 = on top of the label, 1 = edge of reach
+        if (size === 2) {
+          if (score < regionScore) { regionScore = score; region = l[0]; }
+        } else if (score < bestScore) {
+          bestScore = score; best = l[0];
+        }
+      }
+      return best || region;
+    }
+
+    let fxPlace = null;
+    let fxPlaceName = null;
+    function ensureFxPlace() {
+      if (fxPlace) return fxPlace;
+      const box = fxContainer();
+      if (!box) return null;
+      fxPlace = document.createElement("div");
+      fxPlace.className = "fx-place";
+      box.appendChild(fxPlace);
+      return fxPlace;
+    }
+    function positionFxPlace() {
+      if (!fxPlace) return;
+      const pt = markerScreenPoint();
+      if (!pt) return;
+      fxPlace.style.left = pt.x + "px";
+      fxPlace.style.top = (pt.y + 12) + "px";
+    }
+    function updatePlaceLabel(gameX, gameY, plane) {
+      const el = ensureFxPlace();
+      if (!el) return;
+      const name = placeNameFor(Math.round(gameX), Math.round(gameY), plane);
+      if (name !== fxPlaceName) {
+        fxPlaceName = name;
+        el.textContent = name || "";
+        el.style.opacity = name ? "0.95" : "0";
+      }
+      positionFxPlace();
+    }
+    function hidePlaceLabel() {
+      fxPlaceName = null;
+      if (fxPlace) { fxPlace.textContent = ""; fxPlace.style.opacity = "0"; }
+    }
+
     // ---- Marker HP bar + HUD ----
     let fxHpBar = null;
     let hudHideTimer = null;
@@ -2640,6 +2724,7 @@
       const sum = document.getElementById("hudSummary");
       if (sum) sum.style.display = "none";
       if (fxHpBar) fxHpBar.style.opacity = "0";
+      hidePlaceLabel();
       const box = fxContainer();
       if (box) Array.from(box.querySelectorAll(".fx-xp, .fx-split")).forEach(el => el.remove());
     }
@@ -2915,6 +3000,21 @@
       }
       prefetchUpcomingTeleports(0);
 
+      // After the immediate lookahead, queue every other teleport
+      // destination in the session at low priority. The queue only runs
+      // while nothing visible is pending, so this costs nothing on
+      // screen, and scrubbing to an arbitrary point usually lands on
+      // tiles that are already there. Real teleports only, not implicit
+      // cuts, and at FOLLOW_ZOOM only.
+      setTimeout(() => {
+        if (!activePlayback || activePlayback.segments !== segments) return;
+        segments.forEach(seg => {
+          if (!seg.snap || seg.implicit || seg.tileUrls !== null) return;
+          seg.tileUrls = preloadTilesAround(seg.to, FOLLOW_ZOOM, 2, "low",
+            typeof seg.plane === "number" ? seg.plane : currentPlane);
+        });
+      }, 1500);
+
       const ROUTE_AHEAD_MS = 10000;
       const ROUTE_AHEAD_EVERY_MS = 1500;
       let lastRouteAheadAt = 0;
@@ -2994,6 +3094,10 @@
         playbackMarker.setLatLng(latlng);
         playbackHalo.setLatLng(latlng);
         updateTrail(idx, seg, latlng);
+        {
+          const g = latLngToGame(latlng);
+          updatePlaceLabel(g.x, g.y, typeof seg.plane === "number" ? seg.plane : currentPlane);
+        }
 
         const shouldSnap = snapCamera || seg.snap;
         if (shouldSnap) {
