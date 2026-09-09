@@ -290,6 +290,24 @@
     display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
     max-width: calc(100% - 20px);
   }
+  .map-search { position: relative; }
+  #sessionSearch {
+    width: 220px; background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 6px 10px; font-family: inherit; font-size: 0.78rem;
+  }
+  #sessionSearch:focus { outline: none; border-color: var(--text-faint); }
+  .search-results {
+    position: absolute; top: calc(100% + 4px); right: 0; width: 340px; max-height: 60vh; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px; padding: 4px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5); font-size: 0.74rem;
+  }
+  .search-result { padding: 6px 8px; border-radius: 4px; cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+  .search-result:hover { background: var(--cell); }
+  .search-result .sr-player { font-weight: 700; }
+  .search-result .sr-when { color: var(--text); }
+  .search-result .sr-places { grid-column: 1 / -1; color: var(--text-dim); }
+  .search-result .sr-places b { color: var(--text); font-weight: 600; }
+  .search-empty { padding: 8px; color: var(--text-faint); }
   .map-bottom {
     position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 1001;
     display: flex; gap: 8px; align-items: center;
@@ -390,6 +408,8 @@
     .map-plane { left: 56px; padding: 4px; gap: 3px; }
     .map-top-right { gap: 4px; }
     .map-btn { padding: 5px 9px; font-size: 0.75rem; }
+    #sessionSearch { width: 150px; font-size: 0.72rem; padding: 5px 8px; }
+    .search-results { width: min(340px, calc(100vw - 20px)); }
     .leaflet-control-zoom { display: none; }
     #sessionHud { top: 52px; left: 6px; min-width: 140px; max-width: 170px; font-size: 0.68rem; padding: 6px 8px; }
   }
@@ -427,6 +447,10 @@
     <div class="map-shell">
       <div id="planeControl" class="map-plane"></div>
       <div class="map-top-right">
+        <div class="map-search">
+          <input id="sessionSearch" type="search" placeholder="Find sessions: zulrah, ferox..." autocomplete="off" />
+          <div id="sessionSearchResults" class="search-results" style="display:none;"></div>
+        </div>
         <button id="overlayRangeBtn" class="tab-btn map-btn" title="Time window for heatmap and fog">All time</button>
         <button id="overlayAllBtn" class="tab-btn map-btn" title="Combine all three accounts in heatmap and fog">👥 All</button>
         <button id="fogToggleBtn" class="tab-btn map-btn">🌫️ Fog</button>
@@ -2572,6 +2596,108 @@
       return best || region;
     }
 
+    // ---- Session search by place ----
+    // Places a session visited, from label lookups along its route: walk
+    // paths sampled every few tiles, plus teleport/bank/xp/hp positions.
+    // Cached per session id since the labels never change.
+    const sessionPlacesCache = new Map(); // session id -> [names in visit order]
+    function sessionPlaces(session) {
+      if (sessionPlacesCache.has(session.id)) return sessionPlacesCache.get(session.id);
+      const names = [];
+      const push = (x, y, plane) => {
+        const n = placeNameFor(Math.round(x), Math.round(y), plane);
+        if (n && names[names.length - 1] !== n) names.push(n);
+      };
+      (session.events || []).forEach(ev => {
+        if (ev.ty === "walk" && ev.f && ev.t) {
+          forEachWalkPoint(ev, 12, (x, y) => push(x, y, ev.f[2]));
+        } else if (ev.t) {
+          push(ev.t[0], ev.t[1], ev.t[2]);
+        }
+      });
+      sessionPlacesCache.set(session.id, names);
+      return names;
+    }
+
+    let searchSeq = 0;
+    async function runSessionSearch(query) {
+      const box = document.getElementById("sessionSearchResults");
+      if (!box) return;
+      const terms = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+      if (!terms.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+      const seq = ++searchSeq;
+      box.style.display = "block";
+      box.innerHTML = '<div class="search-empty">Searching...</div>';
+      await loadMapLabels();
+      const results = [];
+      for (const p of ROUTE_PLAYERS) {
+        const days = await fetchAvailableDays(p.hash);
+        const perDay = await Promise.all(days.map(d => fetchDaySessions(p.hash, d)));
+        if (seq !== searchSeq) return;
+        dedupeSessions(perDay.flat()).forEach(session => {
+          const places = sessionPlaces(session);
+          const lower = places.map(n => n.toLowerCase());
+          // every term must match some place in the session
+          const hits = terms.map(t => lower.findIndex(n => n.includes(t)));
+          if (hits.some(h => h < 0)) return;
+          results.push({ player: p, session, places, matched: new Set(hits.map(h => places[h])) });
+        });
+      }
+      if (seq !== searchSeq) return;
+      results.sort((a, b) => b.session.start - a.session.start);
+      if (!results.length) { box.innerHTML = '<div class="search-empty">No sessions match</div>'; return; }
+      box.innerHTML = "";
+      results.slice(0, 40).forEach(r => {
+        const el = document.createElement("div");
+        el.className = "search-result";
+        const when = new Date(r.session.start * 1000).toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        const dur = Math.max(0, (r.session.end || r.session.start) - r.session.start);
+        // show matched places in bold, with a little context either side
+        const shown = r.places.filter(n => r.matched.has(n));
+        const others = r.places.filter(n => !r.matched.has(n)).slice(0, 3);
+        el.innerHTML =
+          '<span class="sr-player" style="color:' + r.player.color + '">' + esc(r.player.name) + '</span>' +
+          '<span class="sr-when">' + esc(when) + ' · ' + formatDuration(dur) + '</span>' +
+          '<span class="sr-places">' + shown.map(n => "<b>" + esc(n) + "</b>").join(", ") +
+            (others.length ? ", " + others.map(esc).join(", ") : "") + '</span>';
+        el.addEventListener("click", () => {
+          box.style.display = "none";
+          openSession(r.player, r.session);
+        });
+        box.appendChild(el);
+      });
+      if (results.length > 40) {
+        const more = document.createElement("div");
+        more.className = "search-empty";
+        more.textContent = (results.length - 40) + " more, refine the search";
+        box.appendChild(more);
+      }
+    }
+
+    // Switch player/month and load a specific session, keeping the
+    // selects in sync as if the user had picked them.
+    async function openSession(player, session) {
+      const playerSelect = document.getElementById("playerSelect");
+      const monthSelect = document.getElementById("monthSelect");
+      const sessionSelect = document.getElementById("sessionSelect");
+      const pIdx = ROUTE_PLAYERS.indexOf(player);
+      if (playerSelect && pIdx >= 0) playerSelect.value = String(pIdx);
+      currentPlayerColor = player.color || currentPlayerColor;
+      currentPlayerHash = player.hash;
+      const months = await fetchAvailableMonths(player.hash);
+      populateMonthSelect(months);
+      const ym = new Date(session.start * 1000).toISOString().slice(0, 7);
+      if (monthSelect) monthSelect.value = ym;
+      await loadSessionsForMonth(player.hash, ym);
+      const idx = currentSessions.findIndex(s => s.id === session.id);
+      if (idx < 0) return;
+      if (sessionSelect) sessionSelect.value = String(idx);
+      loadSessionForPlayback(currentSessions[idx]);
+      if (heatmapEnabled) await refreshHeatmapLayer();
+      if (fogEnabled) { await ensureFogData(); redrawFog(); }
+    }
+
     let fxPlace = null;
     let fxPlaceName = null;
     function ensureFxPlace() {
@@ -3255,6 +3381,26 @@
 
       const speedBtn = document.getElementById("speedBtn");
       if (speedBtn) speedBtn.addEventListener("click", cyclePlaybackSpeed);
+
+      const searchInput = document.getElementById("sessionSearch");
+      const searchBox = document.getElementById("sessionSearchResults");
+      if (searchInput) {
+        let searchTimer = null;
+        searchInput.addEventListener("input", () => {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => runSessionSearch(searchInput.value.trim()), 250);
+        });
+        searchInput.addEventListener("focus", () => {
+          if (searchInput.value.trim() && searchBox && searchBox.innerHTML) searchBox.style.display = "block";
+        });
+        searchInput.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") { searchInput.value = ""; if (searchBox) searchBox.style.display = "none"; searchInput.blur(); }
+          e.stopPropagation();
+        });
+        document.addEventListener("click", (e) => {
+          if (searchBox && !e.target.closest(".map-search")) searchBox.style.display = "none";
+        });
+      }
 
       // Map tab keyboard: space play/pause, left/right step a segment.
       document.addEventListener("keydown", (e) => {
