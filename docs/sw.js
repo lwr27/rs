@@ -9,7 +9,7 @@
 // oldest are evicted, so it stays around 100MB at most rather than
 // slowly accumulating the entire map.
 
-const TILE_CACHE = "rs-map-tiles-v2";
+const TILE_CACHE = "rs-map-tiles-v4";
 const MAX_TILES = 4000;
 const TRIM_EVERY = 50;
 const TILE_HOSTS = ["map.3kt.live", "lwr27.github.io"];

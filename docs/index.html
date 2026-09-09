@@ -1750,7 +1750,7 @@
     // out to be broken (the image fails to decode), the page drops that
     // entry so the retry goes back to the network instead of hitting the
     // same bad copy again.
-    const TILE_CACHE_NAME = "rs-map-tiles-v2";
+    const TILE_CACHE_NAME = "rs-map-tiles-v4";
     function evictTileFromCache(url) {
       if (!("caches" in window)) return;
       const key = url.split("?")[0];
@@ -1782,10 +1782,30 @@
         if (this.options.crossOrigin || this.options.crossOrigin === "") {
           tile.crossOrigin = this.options.crossOrigin === true ? "" : this.options.crossOrigin;
         }
+        // Leaflet already issues requests centre-out, but the browser only
+        // loosely follows issue order once several are in flight. Telling
+        // it which tiles matter makes the middle of the screen fill first:
+        // high for the tiles nearest the centre, low for the outer ring.
+        tile.fetchPriority = this._priorityFor(coords);
         tile.alt = "";
         tile.setAttribute("role", "presentation");
         tile.src = url;
         return tile;
+      },
+
+      _priorityFor: function (coords) {
+        const map = this._map;
+        if (!map || !map._loaded) return "auto";
+        const size = map.getSize();
+        const tileSize = this.getTileSize();
+        // Tile centre in layer pixels vs the viewport centre.
+        const tilePos = this._getTilePos(coords).add(tileSize.divideBy(2));
+        const centrePos = map.containerPointToLayerPoint(size.divideBy(2));
+        const d = tilePos.distanceTo(centrePos);
+        const radius = Math.max(size.x, size.y) / 2;
+        if (d < radius * 0.4) return "high";
+        if (d > radius * 1.05) return "low";
+        return "auto";
       }
     });
 
