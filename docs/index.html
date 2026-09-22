@@ -1721,7 +1721,12 @@
         select.appendChild(opt);
         return;
       }
-      sessions.forEach((session, i) => {
+      // currentSessions is oldest-first (needed elsewhere for playback
+      // ordering), but the dropdown itself should read newest-first, with
+      // the newest auto-selected as the first option. Option values stay
+      // as the real index into currentSessions - only the display order
+      // and the array we iterate over are reversed.
+      sessions.map((session, i) => ({ session, i })).reverse().forEach(({ session, i }) => {
         const opt = document.createElement("option");
         opt.value = i;
         const startDate = new Date(session.start * 1000);
