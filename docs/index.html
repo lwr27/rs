@@ -345,9 +345,13 @@
   #sessionScrubber { flex: 1 1 auto; min-width: 0; }
 
   #sessionStatus {
-    color: var(--text-faint); font-size: 0.72rem; min-width: 168px; text-align: right;
+    color: var(--text-faint); font-size: 0.72rem; min-width: 168px;
     font-variant-numeric: tabular-nums; flex-shrink: 0;
+    display: flex; align-items: baseline; gap: 6px;
   }
+  #sessionClock { flex: 0 0 auto; width: 84px; text-align: right; }
+  .status-sep { flex: 0 0 auto; opacity: 0.5; }
+  #sessionElapsed { flex: 1 1 auto; text-align: right; }
 
   /* Playback effects layer (hitsplats, xp drops, marker hp bar) */
   #mapFx { position: absolute; inset: 0; z-index: 998; pointer-events: none; overflow: hidden; }
@@ -488,7 +492,7 @@
           <button id="sessionPlayBtn" class="tab-btn map-btn">▶</button>
           <button id="speedBtn" class="tab-btn map-btn" title="Playback speed">1x</button>
           <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
-          <span id="sessionStatus"></span>
+          <span id="sessionStatus"><span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span></span>
         </div>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
@@ -1773,7 +1777,10 @@
     function noteTileLoad() {
       tileErrorsSinceLoad = 0;
       const el = document.getElementById("sessionStatus");
-      if (el && el.dataset.outage) { el.dataset.outage = ""; el.textContent = ""; }
+      if (el && el.dataset.outage) {
+        el.dataset.outage = "";
+        el.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span>';
+      }
     }
     function noteTileError() {
       tileErrorsSinceLoad++;
@@ -2978,6 +2985,13 @@
       const scrubber = document.getElementById("sessionScrubber");
       activePlayback = null;
       hideHud();
+      // Reset to the clock/elapsed skeleton on every attempt - a failed
+      // load below replaces it with plain text, which would otherwise
+      // leave #sessionClock/#sessionElapsed missing for every load after.
+      if (statusEl) {
+        statusEl.dataset.outage = "";
+        statusEl.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span>';
+      }
       if (!session || !session.events || !session.events.length) {
         if (statusEl) statusEl.textContent = "No events";
         return;
@@ -3353,10 +3367,16 @@
         const realTime = seg.realFrom + (seg.realTo - seg.realFrom) * segFrac;
         if (statusEl && !statusEl.dataset.outage) {
           const idleTag = seg.type === "idle" ? "  (idle)" : "";
-          const clock = new Date(realTime * 1000).toLocaleTimeString("en-GB", {
-            timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", second: "2-digit"
-          });
-          statusEl.textContent = clock + "  ·  " + formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+          const clockEl = document.getElementById("sessionClock");
+          const elapsedEl = document.getElementById("sessionElapsed");
+          if (clockEl) {
+            clockEl.textContent = new Date(realTime * 1000).toLocaleTimeString("en-GB", {
+              timeZone: "Europe/London", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true
+            }).replace(/\s?([ap])m$/i, (m, ap) => " " + ap.toLowerCase() + "m");
+          }
+          if (elapsedEl) {
+            elapsedEl.textContent = formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+          }
           statusEl.title = new Date(realTime * 1000).toLocaleString("en-GB", { timeZone: "Europe/London" }) + " (UK time)";
         }
         if (scrubber) scrubber.value = Math.round(frac * 1000);
