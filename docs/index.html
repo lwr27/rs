@@ -319,6 +319,17 @@
   }
   .live-marker-label::before { display: none; }
 
+  /* Small direction arrow that sits on the playback marker and turns to
+     face the way the player is heading. */
+  .player-heading {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 12px solid #fff;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.6));
+    transition: transform 120ms linear;
+  }
+
   #sessionSearch {
     width: 220px; background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
     border-radius: 4px; padding: 6px 10px; font-family: inherit; font-size: 0.78rem;
@@ -2465,6 +2476,17 @@
     let lastFrameTime = null;
     let playbackMarker = null;
     let playbackHalo = null;
+    let playbackHeading = null;
+
+    function headingDegrees(fromLatLng, toLatLng) {
+      // Screen-space bearing (0 = up/north), since this map uses a flat
+      // linear projection, not real-world great-circle bearing.
+      const p1 = leafletMap.project(fromLatLng, leafletMap.getZoom());
+      const p2 = leafletMap.project(toLatLng, leafletMap.getZoom());
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return null;
+      return Math.atan2(dx, -dy) * 180 / Math.PI;
+    }
 
     const TELEPORT_FLASH_MIN_MS = 220;
     const TELEPORT_FLASH_MAX_MS = 800;
@@ -2731,7 +2753,7 @@
       if (!leafletMap) return;
       if (typeof plane === "number" && plane !== currentPlane) switchPlane(plane);
       const latlng = gameToLatLng(x, y);
-      leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), PLACE_JUMP_ZOOM), { animate: true });
+      leafletMap.flyTo(latlng, Math.max(leafletMap.getZoom(), PLACE_JUMP_ZOOM), { duration: 0.6 });
     }
     async function toggleBanksPanel() {
       banksEnabled = !banksEnabled;
@@ -3151,12 +3173,17 @@
 
       if (playbackMarker) { leafletMap.removeLayer(playbackMarker); playbackMarker = null; }
       if (playbackHalo) { leafletMap.removeLayer(playbackHalo); playbackHalo = null; }
+      if (playbackHeading) { leafletMap.removeLayer(playbackHeading); playbackHeading = null; }
 
       playbackHalo = L.circleMarker([0, 0], {
         radius: 9, color: "none", fillColor: currentPlayerColor, fillOpacity: 0.25
       }).addTo(leafletMap);
       playbackMarker = L.circleMarker([0, 0], {
         radius: 6, color: "#fff", weight: 2, fillColor: currentPlayerColor, fillOpacity: 1
+      }).addTo(leafletMap);
+      playbackHeading = L.marker([0, 0], {
+        icon: L.divIcon({ className: "", html: '<div class="player-heading"></div>', iconSize: [12, 12], iconAnchor: [6, 20] }),
+        interactive: false, keyboard: false
       }).addTo(leafletMap);
 
       const FOLLOW_ZOOM = 8;
@@ -3519,6 +3546,20 @@
 
         playbackMarker.setLatLng(latlng);
         playbackHalo.setLatLng(latlng);
+        if (playbackHeading) {
+          playbackHeading.setLatLng(latlng);
+          const el = playbackHeading.getElement();
+          if (el) {
+            if (seg.isWalk) {
+              const deg = headingDegrees(seg.from, seg.to);
+              const arrow = el.querySelector(".player-heading");
+              if (arrow) arrow.style.transform = "rotate(" + (deg === null ? 0 : deg) + "deg)";
+              el.style.opacity = "1";
+            } else {
+              el.style.opacity = "0";
+            }
+          }
+        }
         updateTrail(idx, seg, latlng);
         {
           const g = latLngToGame(latlng);
