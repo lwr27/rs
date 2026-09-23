@@ -3489,7 +3489,7 @@
       loadSessionForPlayback(session);
     }
 
-    function initSessionControls() {
+    async function initSessionControls() {
       const playerSelect = document.getElementById("playerSelect");
       const monthSelect = document.getElementById("monthSelect");
       const playBtn = document.getElementById("sessionPlayBtn");
@@ -3602,9 +3602,26 @@
       }
 
       if (ROUTE_PLAYERS.length) {
-        currentPlayerColor = ROUTE_PLAYERS[0].color || currentPlayerColor;
-        currentPlayerHash = ROUTE_PLAYERS[0].hash;
-        loadAndRenderPlayer(ROUTE_PLAYERS[0].hash);
+        // Default to whoever has the most recent upload, rather than
+        // always the first account in the list - falls back to that
+        // first account if the lookup fails or nobody has any data yet.
+        let defaultPlayer = ROUTE_PLAYERS[0];
+        try {
+          const perPlayer = await Promise.all(ROUTE_PLAYERS.map(async p => ({
+            player: p, days: await fetchAvailableDays(p.hash)
+          })));
+          const withData = perPlayer.filter(x => x.days.length);
+          if (withData.length) {
+            withData.sort((a, b) => b.days[b.days.length - 1].localeCompare(a.days[a.days.length - 1]));
+            defaultPlayer = withData[0].player;
+          }
+        } catch (err) {
+          console.debug("Could not determine most recently active player, defaulting to the first", err);
+        }
+        currentPlayerColor = defaultPlayer.color || currentPlayerColor;
+        currentPlayerHash = defaultPlayer.hash;
+        if (playerSelect) playerSelect.value = String(ROUTE_PLAYERS.indexOf(defaultPlayer));
+        loadAndRenderPlayer(defaultPlayer.hash);
       }
     }
 
