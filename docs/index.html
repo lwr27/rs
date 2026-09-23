@@ -291,6 +291,25 @@
     max-width: calc(100% - 20px);
   }
   .map-search { position: relative; }
+  .banks-panel {
+    position: absolute; top: 56px; right: 10px; z-index: 1001;
+    width: 280px; max-height: 60vh; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 10px; font-size: 0.78rem;
+  }
+  .banks-panel h4 {
+    margin: 0 0 6px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;
+  }
+  .banks-panel .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .banks-panel ol { margin: 0 0 12px; padding-left: 0; list-style: none; }
+  .banks-panel ol:last-child { margin-bottom: 0; }
+  .banks-panel li {
+    display: flex; justify-content: space-between; gap: 8px;
+    padding: 3px 0; color: var(--text-dim);
+  }
+  .banks-panel li b { color: var(--text); font-weight: 600; }
+  .banks-panel li span:last-child { font-variant-numeric: tabular-nums; }
+  .banks-panel .banks-empty { color: var(--text-faint); }
   #sessionSearch {
     width: 220px; background: var(--cell); color: var(--text); border: 1px solid var(--panel-border);
     border-radius: 4px; padding: 6px 10px; font-family: inherit; font-size: 0.78rem;
@@ -455,8 +474,10 @@
         <button id="overlayAllBtn" class="tab-btn map-btn" title="Combine all three accounts in heatmap and fog">👥 All</button>
         <button id="fogToggleBtn" class="tab-btn map-btn">🌫️ Fog</button>
         <button id="heatmapToggleBtn" class="tab-btn map-btn">🔥 Heatmap</button>
+        <button id="banksToggleBtn" class="tab-btn map-btn">🏦 Banks</button>
         <button id="mapCloseBtn" class="tab-btn map-btn">Close ✕</button>
       </div>
+      <div id="banksPanel" class="banks-panel" style="display:none;"></div>
       <div class="map-bottom">
         <div class="map-bottom-row map-selects">
           <select id="playerSelect" class="map-select"></select>
@@ -1886,6 +1907,9 @@
       const fogBtn = document.getElementById("fogToggleBtn");
       if (fogBtn) fogBtn.addEventListener("click", toggleFog);
 
+      const banksBtn = document.getElementById("banksToggleBtn");
+      if (banksBtn) banksBtn.addEventListener("click", toggleBanksPanel);
+
       const allBtn = document.getElementById("overlayAllBtn");
       if (allBtn) allBtn.addEventListener("click", toggleOverlayAll);
 
@@ -2286,6 +2310,7 @@
       if (btn) btn.classList.toggle("active", overlayAllPlayers);
       if (heatmapEnabled) await refreshHeatmapLayer();
       if (fogEnabled) { await ensureFogData(); redrawFog(); }
+      if (banksEnabled) await refreshBanksPanel();
     }
 
     function switchPlane(plane) {
@@ -2599,6 +2624,73 @@
         }
       }
       return best || region;
+    }
+
+    // ---- Bank visit counts ----
+    // Tallies how many times each place has been banked at, per player.
+    // Reuses the same place lookup the marker label uses, so a bank
+    // counts under whatever name that spot would show during playback
+    // (e.g. "Falador" rather than a raw coordinate). Only counts the
+    // bank interface itself - see the README/plugin notes: deposit boxes
+    // aren't currently detected, and a rare reopen within one visit can
+    // count twice.
+    let banksEnabled = false;
+    const bankCountsCache = new Map(); // hash -> Map(place -> count)
+    async function bankCountsFor(hash) {
+      if (bankCountsCache.has(hash)) return bankCountsCache.get(hash);
+      await loadMapLabels();
+      const sessions = await fetchAllPlayerSessions(hash);
+      const counts = new Map();
+      sessions.forEach(session => {
+        (session.events || []).forEach(ev => {
+          if (ev.ty !== "bank" || !ev.t) return;
+          const name = placeNameFor(Math.round(ev.t[0]), Math.round(ev.t[1]), ev.t[2]) || "Unknown location";
+          counts.set(name, (counts.get(name) || 0) + 1);
+        });
+      });
+      bankCountsCache.set(hash, counts);
+      return counts;
+    }
+    async function refreshBanksPanel() {
+      const panel = document.getElementById("banksPanel");
+      if (!panel) return;
+      panel.innerHTML = '<div class="banks-empty">Loading...</div>';
+      const hashes = overlayHashes();
+      const perPlayer = await Promise.all(hashes.map(async h => ({
+        player: ROUTE_PLAYERS.find(p => p.hash === h),
+        counts: await bankCountsFor(h)
+      })));
+      if (!banksEnabled) return; // toggled off while loading
+      panel.innerHTML = "";
+      let any = false;
+      perPlayer.forEach(({ player, counts }) => {
+        if (!counts.size) return;
+        any = true;
+        const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+        const total = ranked.reduce((sum, [, n]) => sum + n, 0);
+        const h4 = document.createElement("h4");
+        h4.innerHTML = '<span class="swatch" style="background:' + player.color + '"></span>' +
+          esc(player.name) + '<span style="color:var(--text-faint); font-weight:400;"> · ' + total + ' visits</span>';
+        panel.appendChild(h4);
+        const ol = document.createElement("ol");
+        ranked.slice(0, 10).forEach(([name, n]) => {
+          const li = document.createElement("li");
+          li.innerHTML = "<b>" + esc(name) + "</b><span>" + n + "</span>";
+          ol.appendChild(li);
+        });
+        panel.appendChild(ol);
+      });
+      if (!any) panel.innerHTML = '<div class="banks-empty">No bank visits recorded yet.</div>';
+    }
+    async function toggleBanksPanel() {
+      banksEnabled = !banksEnabled;
+      const btn = document.getElementById("banksToggleBtn");
+      if (btn) btn.classList.toggle("active", banksEnabled);
+      const panel = document.getElementById("banksPanel");
+      if (!panel) return;
+      if (!banksEnabled) { panel.style.display = "none"; return; }
+      panel.style.display = "block";
+      await refreshBanksPanel();
     }
 
     // ---- Session search by place ----
