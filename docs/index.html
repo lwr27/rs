@@ -345,13 +345,23 @@
   #sessionScrubber { flex: 1 1 auto; min-width: 0; }
 
   #sessionStatus {
-    color: var(--text-faint); font-size: 0.72rem; min-width: 168px;
+    color: var(--text-faint); font-size: 0.72rem; width: 208px;
     font-variant-numeric: tabular-nums; flex-shrink: 0;
     display: flex; align-items: baseline; gap: 6px;
   }
   #sessionClock { flex: 0 0 auto; width: 84px; text-align: right; }
   .status-sep { flex: 0 0 auto; opacity: 0.5; }
-  #sessionElapsed { flex: 1 1 auto; text-align: right; }
+  #sessionElapsed {
+    flex: 1 1 auto; text-align: right; overflow: hidden;
+    white-space: nowrap; text-overflow: clip;
+  }
+  .status-idle {
+    flex: 0 0 auto; width: 14px; height: 14px; margin-left: 2px;
+  }
+  .status-idle.active::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #f0b429; vertical-align: middle;
+  }
 
   /* Playback effects layer (hitsplats, xp drops, marker hp bar) */
   #mapFx { position: absolute; inset: 0; z-index: 998; pointer-events: none; overflow: hidden; }
@@ -427,7 +437,8 @@
     .map-selects { display: flex; width: 100%; }
     .map-select { flex: 1 1 0; min-width: 0; font-size: 0.75rem; padding: 6px 4px; }
     .map-playback { width: 100%; }
-    #sessionStatus { min-width: 122px; font-size: 0.66rem; }
+    #sessionStatus { width: 150px; font-size: 0.66rem; gap: 4px; }
+    #sessionClock { width: 66px; }
     .map-plane { left: 56px; padding: 4px; gap: 3px; }
     .map-top-right { gap: 4px; }
     .map-btn { padding: 5px 9px; font-size: 0.75rem; }
@@ -492,7 +503,7 @@
           <button id="sessionPlayBtn" class="tab-btn map-btn">▶</button>
           <button id="speedBtn" class="tab-btn map-btn" title="Playback speed">1x</button>
           <input id="sessionScrubber" type="range" min="0" max="1000" value="0" />
-          <span id="sessionStatus"><span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span></span>
+          <span id="sessionStatus"><span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span><span id="sessionIdle" class="status-idle" title="Idle - nothing happening on screen right now"></span></span>
         </div>
       </div>
       <div id="leafletMap" style="position:absolute; inset:0; background:#000;"></div>
@@ -1779,7 +1790,7 @@
       const el = document.getElementById("sessionStatus");
       if (el && el.dataset.outage) {
         el.dataset.outage = "";
-        el.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span>';
+        el.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span><span id="sessionIdle" class="status-idle" title="Idle - nothing happening on screen right now"></span>';
       }
     }
     function noteTileError() {
@@ -2990,7 +3001,7 @@
       // leave #sessionClock/#sessionElapsed missing for every load after.
       if (statusEl) {
         statusEl.dataset.outage = "";
-        statusEl.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span>';
+        statusEl.innerHTML = '<span id="sessionClock"></span><span class="status-sep">·</span><span id="sessionElapsed"></span><span id="sessionIdle" class="status-idle" title="Idle - nothing happening on screen right now"></span>';
       }
       if (!session || !session.events || !session.events.length) {
         if (statusEl) statusEl.textContent = "No events";
@@ -3366,18 +3377,20 @@
 
         const realTime = seg.realFrom + (seg.realTo - seg.realFrom) * segFrac;
         if (statusEl && !statusEl.dataset.outage) {
-          const idleTag = seg.type === "idle" ? "  (idle)" : "";
           const clockEl = document.getElementById("sessionClock");
           const elapsedEl = document.getElementById("sessionElapsed");
+          const idleEl = document.getElementById("sessionIdle");
           if (clockEl) {
             clockEl.textContent = new Date(realTime * 1000).toLocaleTimeString("en-GB", {
               timeZone: "Europe/London", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true
             }).replace(/\s?([ap])m$/i, (m, ap) => " " + ap.toLowerCase() + "m");
           }
           if (elapsedEl) {
-            elapsedEl.textContent = formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+            elapsedEl.textContent = formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0);
           }
-          statusEl.title = new Date(realTime * 1000).toLocaleString("en-GB", { timeZone: "Europe/London" }) + " (UK time)";
+          if (idleEl) idleEl.classList.toggle("active", seg.type === "idle");
+          statusEl.title = new Date(realTime * 1000).toLocaleString("en-GB", { timeZone: "Europe/London" }) + " (UK time)" +
+            (seg.type === "idle" ? " - idle, nothing happening on screen" : "");
         }
         if (scrubber) scrubber.value = Math.round(frac * 1000);
         updateInstanceBanner();
