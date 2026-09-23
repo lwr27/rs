@@ -2635,7 +2635,10 @@
     // aren't currently detected, and a rare reopen within one visit can
     // count twice.
     let banksEnabled = false;
-    const bankCountsCache = new Map(); // hash -> Map(place -> count)
+    // hash -> Map(place -> { count, x, y, plane }). The coordinate is
+    // whichever bank event for that place was seen first - close enough
+    // to click and jump to, since all banks at one place sit together.
+    const bankCountsCache = new Map();
     async function bankCountsFor(hash) {
       if (bankCountsCache.has(hash)) return bankCountsCache.get(hash);
       await loadMapLabels();
@@ -2645,7 +2648,9 @@
         (session.events || []).forEach(ev => {
           if (ev.ty !== "bank" || !ev.t) return;
           const name = placeNameFor(Math.round(ev.t[0]), Math.round(ev.t[1]), ev.t[2]) || "Unknown location";
-          counts.set(name, (counts.get(name) || 0) + 1);
+          const entry = counts.get(name);
+          if (entry) entry.count++;
+          else counts.set(name, { count: 1, x: ev.t[0], y: ev.t[1], plane: ev.t[2] || 0 });
         });
       });
       bankCountsCache.set(hash, counts);
@@ -2666,21 +2671,35 @@
       perPlayer.forEach(({ player, counts }) => {
         if (!counts.size) return;
         any = true;
-        const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-        const total = ranked.reduce((sum, [, n]) => sum + n, 0);
+        const ranked = Array.from(counts.entries()).sort((a, b) => b[1].count - a[1].count);
+        const total = ranked.reduce((sum, [, v]) => sum + v.count, 0);
         const h4 = document.createElement("h4");
         h4.innerHTML = '<span class="swatch" style="background:' + player.color + '"></span>' +
           esc(player.name) + '<span style="color:var(--text-faint); font-weight:400;"> · ' + total + ' visits</span>';
         panel.appendChild(h4);
         const ol = document.createElement("ol");
-        ranked.slice(0, 10).forEach(([name, n]) => {
+        ranked.slice(0, 10).forEach(([name, v]) => {
           const li = document.createElement("li");
-          li.innerHTML = "<b>" + esc(name) + "</b><span>" + n + "</span>";
+          li.innerHTML = "<b>" + esc(name) + "</b><span>" + v.count + "</span>";
+          li.style.cursor = "pointer";
+          li.title = "Centre the map here";
+          li.addEventListener("click", () => centreMapOn(v.x, v.y, v.plane));
           ol.appendChild(li);
         });
         panel.appendChild(ol);
       });
       if (!any) panel.innerHTML = '<div class="banks-empty">No bank visits recorded yet.</div>';
+    }
+
+    // Pans/zooms the map to a game coordinate, switching plane first if
+    // needed. Used by the banks panel; general enough for anything else
+    // that wants to jump the map to a known spot.
+    const PLACE_JUMP_ZOOM = 8;
+    function centreMapOn(x, y, plane) {
+      if (!leafletMap) return;
+      if (typeof plane === "number" && plane !== currentPlane) switchPlane(plane);
+      const latlng = gameToLatLng(x, y);
+      leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), PLACE_JUMP_ZOOM), { animate: true });
     }
     async function toggleBanksPanel() {
       banksEnabled = !banksEnabled;
