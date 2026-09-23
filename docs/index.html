@@ -2793,6 +2793,7 @@
       loadSessionForPlayback(currentSessions[idx]);
       if (heatmapEnabled) await refreshHeatmapLayer();
       if (fogEnabled) { await ensureFogData(); redrawFog(); }
+      if (banksEnabled) await refreshBanksPanel();
     }
 
     let fxPlace = null;
@@ -3455,6 +3456,7 @@
             loadSelectedSession();
             if (heatmapEnabled) await refreshHeatmapLayer();
             if (fogEnabled) { await ensureFogData(); redrawFog(); }
+            if (banksEnabled) await refreshBanksPanel();
           }
         });
       }
