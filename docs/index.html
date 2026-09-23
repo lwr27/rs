@@ -2731,7 +2731,7 @@
       if (!leafletMap) return;
       if (typeof plane === "number" && plane !== currentPlane) switchPlane(plane);
       const latlng = gameToLatLng(x, y);
-      leafletMap.flyTo(latlng, Math.max(leafletMap.getZoom(), PLACE_JUMP_ZOOM), { duration: 0.6 });
+      leafletMap.setView(latlng, Math.max(leafletMap.getZoom(), PLACE_JUMP_ZOOM), { animate: true });
     }
     async function toggleBanksPanel() {
       banksEnabled = !banksEnabled;
