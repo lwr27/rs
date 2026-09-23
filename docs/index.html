@@ -345,7 +345,7 @@
   #sessionScrubber { flex: 1 1 auto; min-width: 0; }
 
   #sessionStatus {
-    color: var(--text-faint); font-size: 0.72rem; min-width: 100px; text-align: right;
+    color: var(--text-faint); font-size: 0.72rem; min-width: 168px; text-align: right;
     font-variant-numeric: tabular-nums; flex-shrink: 0;
   }
 
@@ -423,7 +423,7 @@
     .map-selects { display: flex; width: 100%; }
     .map-select { flex: 1 1 0; min-width: 0; font-size: 0.75rem; padding: 6px 4px; }
     .map-playback { width: 100%; }
-    #sessionStatus { min-width: 70px; font-size: 0.68rem; }
+    #sessionStatus { min-width: 122px; font-size: 0.66rem; }
     .map-plane { left: 56px; padding: 4px; gap: 3px; }
     .map-top-right { gap: 4px; }
     .map-btn { padding: 5px 9px; font-size: 0.75rem; }
@@ -3353,7 +3353,11 @@
         const realTime = seg.realFrom + (seg.realTo - seg.realFrom) * segFrac;
         if (statusEl && !statusEl.dataset.outage) {
           const idleTag = seg.type === "idle" ? "  (idle)" : "";
-          statusEl.textContent = formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+          const clock = new Date(realTime * 1000).toLocaleTimeString("en-GB", {
+            timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", second: "2-digit"
+          });
+          statusEl.textContent = clock + "  ·  " + formatDuration(realTime - t0) + " / " + formatDuration(t1 - t0) + idleTag;
+          statusEl.title = new Date(realTime * 1000).toLocaleString("en-GB", { timeZone: "Europe/London" }) + " (UK time)";
         }
         if (scrubber) scrubber.value = Math.round(frac * 1000);
         updateInstanceBanner();
